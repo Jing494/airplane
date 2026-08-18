@@ -4,7 +4,7 @@
 
 ![Version](https://img.shields.io/badge/VERSION-V1.2.1.3Beta2-4A90D9?style=flat-square)
 ![Platform](https://img.shields.io/badge/PLATFORM-WEB%20%2F%20MOBILE-4A90D9?style=flat-square)
-![Demo](https://img.shields.io/badge/DEMO-在线体验-4A90D9?style=flat-square)](http://wujing.pages.dev/)
+![Demo](https://img.shields.io/badge/DEMO-在线体验-4A90D9?style=flat-square)
 
 > 🌐 **在线演示**：[http://wujing.pages.dev/](http://wujing.pages.dev/)
 
