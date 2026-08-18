@@ -4,6 +4,9 @@
 
 ![Version](https://img.shields.io/badge/VERSION-V1.2.1.3Beta2-4A90D9?style=flat-square)
 ![Platform](https://img.shields.io/badge/PLATFORM-WEB%20%2F%20MOBILE-4A90D9?style=flat-square)
+![Demo](https://img.shields.io/badge/DEMO-在线体验-4A90D9?style=flat-square)](http://wujing.pages.dev/)
+
+> 🌐 **在线演示**：[http://wujing.pages.dev/](http://wujing.pages.dev/)
 
 ---
 
@@ -16,6 +19,12 @@
 ```
 选定起点 → 规划航线 → 挑选座位 → 选择专注场景 → 领取登机牌 → 起飞 → 巡航 → 降落
 ```
+
+---
+
+## 📘 代码文档
+
+> 深入的代码架构、算法解析、函数速查 → [**CodeWiki.md**](CodeWiki.md)
 
 ---
 
@@ -95,6 +104,12 @@ python3 -m http.server 8080
 7. 观看飞机沿航线飞行 → 专注计时中...
 8. 飞行结束 → 航班降落，记录保存
 ```
+
+---
+
+## 📖 代码文档
+
+> 深入的代码架构与实现细节分析 → [**CodeWiki.md**](CodeWiki.md)
 
 ---
 
