@@ -1,0 +1,2126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Airplan · 飞行计划V1.2.1.3Beta2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --safe-left:env(safe-area-inset-left,0px);
+  --safe-right:env(safe-area-inset-right,0px);
+  --primary:#ffffff;
+  --primary-soft:rgba(255,255,255,.18);
+  --primary-glow:rgba(255,255,255,.35);
+  --bg-dark:#1a1a2e;
+  --panel:rgba(0,0,0,0.65);
+  --ease-out-expo:cubic-bezier(.16,1,.3,1);
+  --ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Microsoft YaHei,sans-serif;color:#fff;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-dark);}
+body{position:fixed;inset:0;overscroll-behavior:none;touch-action:pan-x pan-y;}
+#map{width:100%;height:100%;position:absolute;top:0;left:0;z-index:1;background:#0b0b1a;touch-action:none;}
+
+/* UI 层 */
+.ui-layer{position:absolute;z-index:10;pointer-events:none;transition:opacity .4s var(--ease-out-expo),transform .4s var(--ease-out-expo),filter .4s var(--ease-out-expo);}
+.ui-layer>*{pointer-events:auto;}
+.ui-layer.hide-home-ui{opacity:0;pointer-events:none;transform:translateY(-14px);filter:blur(4px);}
+.ui-layer.hide-home-ui>*{pointer-events:none !important;}
+
+/* 顶部导航 */
+.top-nav{top:calc(16px + var(--safe-top));right:calc(12px + var(--safe-right));display:flex;gap:clamp(12px,3.5vw,28px);font-size:clamp(14px,4vw,18px);text-shadow:0 0 10px rgba(0,0,0,.8);flex-wrap:wrap;justify-content:flex-end;max-width:60vw;animation:fadeInDown .6s var(--ease-out-expo) both;}
+.top-nav span{cursor:pointer;opacity:.85;transition:opacity .2s,transform .15s,color .2s;padding:4px 2px;white-space:nowrap;position:relative;}
+.top-nav span::after{content:'';position:absolute;bottom:-2px;left:0;width:0;height:2px;background:var(--primary);border-radius:2px;transition:width .25s var(--ease-out-expo);}
+.top-nav span:hover{opacity:1;color:var(--primary);}
+.top-nav span:hover::after{width:100%;}
+.top-nav span:active{transform:scale(.92);}
+
+/* 问候语 & 机场信息 */
+.greet-wrapper{top:calc(20px + var(--safe-top));left:calc(14px + var(--safe-left));animation:fadeInLeft .6s var(--ease-out-expo) both;display:flex;flex-direction:column;gap:2px;}
+.greet-text{font-size:clamp(22px,6vw,32px);font-weight:500;text-shadow:0 0 12px rgba(0,0,0,.9);}
+.airport-info{font-size:clamp(12px,2.5vw,16px);color:#ccc;text-shadow:0 0 8px rgba(0,0,0,.8);opacity:.9;}
+
+/* 左侧菜单 */
+.left-menu{left:calc(12px + var(--safe-left));bottom:calc(28px + var(--safe-bottom));display:flex;flex-direction:column;gap:8px;}
+.menu-btn{background:rgba(0,0,0,.55);padding:clamp(10px,3vw,12px) clamp(14px,4vw,20px);border-radius:12px;width:clamp(130px,38vw,160px);font-size:clamp(14px,4vw,16px);border:none;text-align:left;cursor:pointer;backdrop-filter:blur(6px);transition:background .25s,transform .12s,box-shadow .25s,border-color .25s;border:1px solid transparent;}
+.menu-btn:hover{background:rgba(0,0,0,.75);border-color:rgba(255,255,255,.25);box-shadow:0 4px 20px rgba(0,0,0,.35);}
+.menu-btn:active{transform:scale(.97) translateX(2px);box-shadow:0 0 12px rgba(255,255,255,.25);}
+
+/* 返回按钮 */
+.back-btn{position:absolute;top:calc(12px + var(--safe-top));left:calc(12px + var(--safe-left));width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.5);border:none;font-size:22px;cursor:pointer;z-index:20;display:flex;align-items:center;justify-content:center;transition:background .2s,transform .15s;backdrop-filter:blur(4px);}
+.back-btn:hover{background:rgba(0,0,0,.75);}
+.back-btn:active{transform:scale(.92);}
+
+/* 机场选择模态 */
+.airport-modal{top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .4s var(--ease-out-expo);z-index:20;}
+.airport-modal.show{opacity:1;pointer-events:auto;}
+.modal-wrap{width:min(1400px,96%);height:min(900px,92%);position:relative;display:flex;flex-direction:row;pointer-events:none;transform:translateY(20px) scale(.98);opacity:0;transition:transform .45s var(--ease-out-expo),opacity .45s var(--ease-out-expo);}
+.airport-modal.show .modal-wrap{transform:translateY(0) scale(1);opacity:1;}
+.right-time-panel,.bottom-search-box,#airportListWrap{pointer-events:auto;}
+
+/* 右侧面板（时间选择） */
+.right-time-panel{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:var(--panel);border-radius:14px;padding:14px;min-width:170px;backdrop-filter:blur(10px);transition:all .4s var(--ease-out-expo);border:1px solid rgba(255,255,255,.06);box-shadow:0 12px 40px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:10px;align-items:center;}
+.time-slider{width:100%;height:24px;-webkit-appearance:none;background:rgba(255,255,255,.15);border-radius:12px;outline:none;margin:4px 0;}
+.time-slider::-webkit-slider-thumb{-webkit-appearance:none;width:36px;height:36px;border-radius:50%;background:var(--primary);cursor:pointer;box-shadow:0 0 16px rgba(255,255,255,.55);transition:transform .15s;}
+.time-slider::-webkit-slider-thumb:hover{transform:scale(1.1);}
+.time-slider::-moz-range-thumb{width:36px;height:36px;border-radius:50%;background:var(--primary);border:none;cursor:pointer;box-shadow:0 0 16px rgba(255,255,255,.55);}
+.time-label{text-align:center;color:#ccc;font-size:20px;font-weight:700;}
+
+/* 机场列表 */
+#airportListWrap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,86vw);max-height:55vh;overflow-y:auto;padding-right:8px;display:flex;flex-direction:column;gap:8px;}
+.airport-list-item{display:flex;align-items:center;padding:12px 14px;background:rgba(255,255,255,.06);border-radius:12px;cursor:pointer;transition:background .2s,transform .15s,border-color .2s,box-shadow .2s;font-size:15px;border:1px solid rgba(255,255,255,.08);}
+.airport-list-item:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);box-shadow:0 6px 20px rgba(0,0,0,.25);}
+.airport-list-item:active{transform:scale(.99);}
+.airport-tag{background:rgba(30,30,35,.85);color:#fff;padding:5px 9px;border-radius:6px;font-weight:800;margin-right:10px;font-size:12px;letter-spacing:.5px;border:1px solid rgba(255,255,255,.4);box-shadow:0 2px 6px rgba(0,0,0,.2);}
+.airport-meta{margin-left:auto;color:#aaa;font-size:13px;font-variant-numeric:tabular-nums;}
+.airport-empty{color:#aaa;text-align:center;padding:40px 10px;font-size:14px;}
+
+/* 搜索框 */
+.bottom-search-box{position:absolute;bottom:calc(20px + var(--safe-bottom));left:50%;transform:translateX(-50%);width:min(600px,88%);}
+.bottom-search-box input{width:100%;background:rgba(0,0,0,.55);border:none;padding:15px 24px;border-radius:30px;font-size:16px;text-align:center;color:#fff;backdrop-filter:blur(8px);transition:background .25s,box-shadow .25s,transform .25s;outline:none;border:1px solid rgba(255,255,255,.08);}
+.bottom-search-box input:focus{background:rgba(0,0,0,.8);box-shadow:0 0 0 2px rgba(255,255,255,.3),0 8px 30px rgba(0,0,0,.35);transform:translateY(-2px);}
+.bottom-search-box input::placeholder{color:#aaa;}
+
+/* 搜索终点弹窗 */
+.search-airport-pop{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.96);width:min(720px,90vw);max-height:80vh;background:rgba(0,0,0,.85);border-radius:18px;padding:22px;display:flex;flex-direction:column;backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .35s var(--ease-out-expo),transform .35s var(--ease-out-expo);border:1px solid rgba(255,255,255,.06);box-shadow:0 24px 70px rgba(0,0,0,.55);z-index:21;}
+.search-airport-pop.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
+.pop-search-input{width:100%;background:rgba(255,255,255,.08);border:none;border-radius:12px;padding:14px 16px 14px 52px;margin-bottom:16px;color:#fff;font-size:16px;outline:none;border:1px solid rgba(255,255,255,.06);transition:background .2s,box-shadow .2s,border-color .2s;}
+.pop-search-input:focus{background:rgba(255,255,255,.12);box-shadow:0 0 0 2px rgba(255,255,255,.25);border-color:rgba(255,255,255,.2);}
+.pop-search-input::placeholder{color:#999;}
+#destResultWrap{overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:8px;padding-right:6px;}
+.search-result-item{padding:13px 14px;background:rgba(255,255,255,.06);border-radius:12px;cursor:pointer;transition:background .2s,transform .15s,border-color .2s,box-shadow .2s;font-size:15px;border:1px solid rgba(255,255,255,.08);}
+.search-result-item:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);box-shadow:0 6px 20px rgba(0,0,0,.25);}
+.search-result-item:active{transform:scale(.99);}
+.search-hint{color:#aaa;font-size:13px;margin-bottom:10px;}
+
+/* 选座 */
+.seat-modal{top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .4s var(--ease-out-expo);z-index:20;}
+.seat-modal.show{opacity:1;pointer-events:auto;}
+.plane-body{background:linear-gradient(180deg,#232323 0%,#151515 100%);width:min(440px,92vw);padding:clamp(26px,6vw,44px) clamp(18px,5vw,28px) clamp(22px,5vw,36px);border-radius:130px 130px 24px 24px;display:flex;flex-direction:column;align-items:center;box-shadow:0 28px 80px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);position:relative;}
+.plane-body::before{content:'';position:absolute;top:18px;left:50%;transform:translateX(-50%);width:42px;height:5px;background:rgba(255,255,255,.15);border-radius:3px;}
+.seat-head-label{display:flex;justify-content:center;gap:clamp(28px,10vw,48px);margin-bottom:14px;color:#888;width:100%;font-size:13px;font-weight:500;letter-spacing:2px;}
+.seat-scroll-area{width:100%;max-height:min(440px,52vh);overflow-y:auto;padding-right:6px;}
+.seat-scroll-area::-webkit-scrollbar{width:5px}
+.seat-scroll-area::-webkit-scrollbar-track{background:rgba(255,255,255,.08);border-radius:4px}
+.seat-scroll-area::-webkit-scrollbar-thumb{background:rgba(255,255,255,.25);border-radius:4px}
+.seat-row-wrap{display:flex;justify-content:center;gap:clamp(8px,3vw,16px);margin:7px 0;align-items:center}
+.seat-box{width:clamp(30px,9vw,38px);height:clamp(30px,9vw,38px);background:#3a3a3a;border-radius:8px;cursor:pointer;transition:background .2s,transform .15s,box-shadow .2s,border-color .2s;border:1px solid rgba(255,255,255,.06);position:relative;display:flex;align-items:center;justify-content:center;}
+.seat-box .seat-icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;pointer-events:none;position:absolute;bottom:2px;right:2px;opacity:0.8;}
+.seat-box .seat-icon svg{width:16px;height:16px;display:block;fill:#fff;stroke:#fff;stroke-width:1;}
+.seat-box::after{content:'';position:absolute;top:4px;left:50%;transform:translateX(-50%);width:40%;height:3px;background:rgba(255,255,255,.12);border-radius:2px;}
+.seat-box.active{box-shadow:0 0 16px currentColor;border-color:rgba(255,255,255,.25);}
+.seat-box:active{transform:scale(.9);}
+.row-num{width:24px;text-align:center;color:#777;font-size:13px;font-weight:500;}
+.confirm-seat-btn{margin-top:22px;padding:14px 42px;border-radius:30px;background:linear-gradient(135deg,#fff 0%,#e0e0e0 100%);color:#000;border:none;font-size:16px;font-weight:600;cursor:pointer;transition:transform .15s,box-shadow .25s;box-shadow:0 8px 24px rgba(0,0,0,.35);}
+.confirm-seat-btn:hover{box-shadow:0 10px 30px rgba(255,255,255,.15);}
+.confirm-seat-btn:active{transform:scale(.96);}
+
+/* 场景弹窗 */
+.scene-pop{position:absolute;right:clamp(12px,4vw,40px);top:50%;transform:translateY(-50%) scale(.95);background:rgba(0,0,0,.88);border-radius:18px;padding:18px;min-width:260px;max-width:min(320px,80vw);opacity:0;pointer-events:none;transition:opacity .3s var(--ease-out-expo),transform .3s var(--ease-out-expo);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 60px rgba(0,0,0,.5);z-index:20;}
+.scene-pop.show{opacity:1;pointer-events:auto;transform:translateY(-50%) scale(1);}
+.scene-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0;}
+.scene-btn{padding:8px 6px;border-radius:12px;border:none;font-size:13px;cursor:pointer;transition:transform .18s,box-shadow .2s,border-color .2s;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);min-height:48px;display:flex;align-items:center;gap:6px;justify-content:center;}
+.scene-btn svg{width:20px;height:20px;display:block;flex-shrink:0;fill:currentColor;}
+.scene-btn .scene-label{flex:1;text-align:left;}
+.scene-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,rgba(255,255,255,0) 100%);pointer-events:none;}
+.scene-btn:active{transform:scale(.96);}
+.scene-btn.selected{border-color:rgba(255,255,255,.5);box-shadow:0 0 0 1px rgba(255,255,255,.25),0 8px 24px rgba(0,0,0,.35);transform:scale(1.02);}
+.scene-btn.selected::after{content:'✓';position:absolute;top:5px;right:7px;width:16px;height:16px;border-radius:50%;background:#fff;color:#000;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3);}
+.scene-btn .del-scene{position:absolute;top:2px;right:24px;width:16px;height:16px;border-radius:50%;background:rgba(255,0,0,.7);color:#fff;font-size:10px;line-height:16px;text-align:center;cursor:pointer;border:none;display:none;}
+.scene-btn.custom .del-scene{display:block;}
+.scene-btn .del-scene:hover{background:red;}
+.tag-study{background:#207830}
+.tag-work{background:#184477}
+.tag-sleep{background:#522078}
+.tag-relax{background:#186077}
+.tag-sport{background:#774018}
+.tag-read{background:#926000}
+.tag-create{background:#771844}
+.tag-game{background:#441877}
+.tag-music{background:#968012}
+.tag-code{background:#214882}
+.tag-star{background:#812563}
+.add-scene-btn{width:100%;padding:10px;background:#333;border:none;border-radius:8px;margin-top:8px;cursor:pointer;transition:background .2s;}
+.add-scene-btn:hover{background:#444;}
+.add-scene-btn:active{transform:scale(.98);}
+
+/* 添加场景 */
+.add-scene-pop{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.96);width:min(680px,90vw);max-height:86vh;background:rgba(18,18,20,.95);border-radius:20px;padding:26px;display:flex;flex-direction:column;backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .35s var(--ease-out-expo),transform .35s var(--ease-out-expo);overflow:hidden;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 70px rgba(0,0,0,.55);z-index:22;}
+.add-scene-pop.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
+.add-scene-pop h3{font-size:20px;font-weight:600;letter-spacing:.5px;text-align:center;padding:0 44px;margin-bottom:12px;}
+.icon-row{display:flex;gap:10px;margin:18px 0;flex-wrap:wrap;max-height:140px;overflow-y:auto;padding:4px;}
+.icon-row::-webkit-scrollbar{width:5px}
+.icon-row::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:4px}
+.icon-sel{width:44px;height:44px;border-radius:50%;cursor:pointer;background:rgba(255,255,255,.08);display:inline-flex;align-items:center;justify-content:center;color:#fff;transition:transform .15s,background .2s,box-shadow .2s;border:1px solid transparent;}
+.icon-sel svg{width:22px;height:22px;display:block;}
+.icon-sel:hover{background:rgba(255,255,255,.14);}
+.icon-sel.active-icon{border-color:var(--primary);background:var(--primary-soft);box-shadow:0 0 14px rgba(255,255,255,.35);}
+.icon-sel:active{transform:scale(.9);}
+.input-name{width:100%;background:rgba(255,255,255,.06);border:none;padding:13px 14px;border-radius:10px;margin:16px 0;color:#fff;font-size:16px;outline:none;border:1px solid rgba(255,255,255,.08);transition:background .2s,box-shadow .2s,border-color .2s;}
+.input-name:focus{background:rgba(255,255,255,.1);box-shadow:0 0 0 2px rgba(255,255,255,.25);border-color:rgba(255,255,255,.2);}
+.dual-btn{display:flex;gap:12px;margin-top:4px;}
+.cancel-scene{flex:1;padding:13px;background:rgba(255,255,255,.08);border:none;border-radius:10px;cursor:pointer;transition:background .2s,transform .12s;color:#fff;}
+.cancel-scene:hover{background:rgba(255,255,255,.14);}
+.cancel-scene:active{transform:scale(.98);}
+.confirm-scene{flex:1;padding:13px;background:linear-gradient(135deg,#fff 0%,#e0e0e0 100%);color:#000;border:none;border-radius:10px;cursor:pointer;font-weight:600;transition:transform .12s,box-shadow .2s;box-shadow:0 4px 16px rgba(0,0,0,.3);}
+.confirm-scene:hover{box-shadow:0 6px 22px rgba(255,255,255,.12);}
+.confirm-scene:active{transform:scale(.98);}
+
+/* 登机牌 */
+.ticket-modal{top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.76);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:28px;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .4s var(--ease-out-expo);z-index:20;}
+.ticket-modal.show{opacity:1;pointer-events:auto;}
+.ticket-card{background:linear-gradient(135deg,#12121a 0%,#0a0a0c 100%);width:min(480px,90vw);border-radius:22px;padding:28px;position:relative;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06);transform:translateY(24px) scale(.98);transition:transform .5s var(--ease-out-expo);}
+.ticket-modal.show .ticket-card{transform:translateY(0) scale(1);}
+.ticket-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--primary),transparent);opacity:.7;}
+.ticket-top{display:flex;justify-content:space-between;margin-bottom:22px}
+.ticket-code{font-size:clamp(30px,8vw,36px);font-weight:800;letter-spacing:1px}
+.ticket-line{display:flex;justify-content:space-between;margin:10px 0;color:#aaa;font-size:14px}
+.barcode-box{width:100%;height:88px;background:#fff;margin-top:24px;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.barcode-box canvas{width:92%;height:66px;}
+.checkin-main-btn{padding:15px 46px;border-radius:32px;background:linear-gradient(135deg,#fff 0%,#e8e8e8 100%);color:#000;border:none;font-size:16px;cursor:pointer;font-weight:600;transition:transform .15s,box-shadow .25s;box-shadow:0 8px 26px rgba(0,0,0,.35);}
+.checkin-main-btn:hover{box-shadow:0 10px 32px rgba(255,255,255,.18);}
+.checkin-main-btn:active{transform:scale(.96);}
+
+/* 起飞 */
+.takeoff-modal{top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:24px;backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .45s var(--ease-out-expo);z-index:20;}
+.takeoff-modal.show{opacity:1;pointer-events:auto;}
+.takeoff-icon{width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;animation:pulsePlane 2s ease-in-out infinite;box-shadow:0 0 40px rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.2);}
+.takeoff-icon svg{width:40px;height:40px;stroke:var(--primary);fill:none;stroke-width:2;}
+.takeoff-text{text-align:center;font-size:18px;line-height:1.8;color:#ddd;}
+.start-fly-btn{padding:15px 46px;border-radius:32px;background:linear-gradient(135deg,#fff 0%,#e8e8e8 100%);color:#000;border:none;font-size:16px;font-weight:600;cursor:pointer;transition:transform .15s,box-shadow .25s;box-shadow:0 8px 26px rgba(0,0,0,.35);}
+.start-fly-btn:hover{box-shadow:0 10px 32px rgba(255,255,255,.18);}
+.start-fly-btn:active{transform:scale(.96);}
+
+/* 巡航 */
+.fly-cruise-modal{top:0;left:0;width:100%;height:100%;display:flex;opacity:0;pointer-events:none;transition:opacity .45s var(--ease-out-expo);z-index:25;}
+.fly-cruise-modal.show{opacity:1;}
+.cruise-top-ctrl{position:absolute;top:calc(12px + var(--safe-top));left:calc(12px + var(--safe-left));display:flex;gap:10px;z-index:30;pointer-events:auto;}
+.cruise-bottom-left,.cruise-bottom-right,.pause-tip{pointer-events:auto;}
+.cruise-ctrl-btn{width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.55);border:none;backdrop-filter:blur(8px);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s,transform .12s,box-shadow .2s;border:1px solid rgba(255,255,255,.08);color:#fff;}
+.cruise-ctrl-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.cruise-ctrl-btn:hover{background:rgba(0,0,0,.78);box-shadow:0 4px 16px rgba(0,0,0,.4);}
+.cruise-ctrl-btn:active{transform:scale(.9);}
+.layer-panel{position:absolute;top:calc(12px + var(--safe-top));right:calc(12px + var(--safe-right));background:rgba(0,0,0,.82);border-radius:14px;padding:16px;min-width:200px;opacity:0;pointer-events:none;transform:translateY(-10px) scale(.98);transition:opacity .3s var(--ease-out-expo),transform .3s var(--ease-out-expo);z-index:30;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.08);box-shadow:0 16px 50px rgba(0,0,0,.45);}
+.layer-panel.show{opacity:1;pointer-events:auto;transform:translateY(0) scale(1);}
+#cruiseCloseHome{text-align:right;display:block;cursor:pointer;font-size:18px;margin-bottom:10px;transition:opacity .15s,color .15s;color:#aaa;}
+#cruiseCloseHome:hover{opacity:1;color:#fff;}
+.layer-item{padding:10px 10px;margin:6px 0;border-radius:8px;cursor:pointer;transition:background .18s,transform .12s;border:1px solid transparent;}
+.layer-item:hover{background:rgba(255,255,255,.1);transform:translateX(3px);}
+.layer-item.active{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.25);}
+.cruise-bottom-left{position:absolute;bottom:calc(16px + var(--safe-bottom));left:calc(14px + var(--safe-left));z-index:30;background:rgba(0,0,0,.5);padding:12px 18px;border-radius:14px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 30px rgba(0,0,0,.3);}
+.cruise-bottom-right{position:absolute;bottom:calc(16px + var(--safe-bottom));right:calc(14px + var(--safe-right));z-index:30;background:rgba(0,0,0,.5);padding:12px 18px;border-radius:14px;backdrop-filter:blur(8px);text-align:right;border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 30px rgba(0,0,0,.3);}
+.pause-tip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);font-size:18px;display:flex;flex-direction:column;align-items:center;gap:18px;z-index:30;background:rgba(0,0,0,.78);padding:26px 48px;border-radius:20px;backdrop-filter:blur(12px);text-align:center;opacity:0;pointer-events:none;transition:opacity .3s var(--ease-out-expo),transform .3s var(--ease-out-expo);border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.pause-tip.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
+.pause-tip button{padding:11px 28px;background:linear-gradient(135deg,#fff 0%,#e0e0e0 100%);color:#000;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-weight:600;transition:transform .12s,box-shadow .2s;}
+.pause-tip button:active{transform:scale(.96);}
+
+/* 设置遮罩 */
+.setting-overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:15;background:rgba(0,0,0,0.45);pointer-events:auto;backdrop-filter:blur(2px);display:none;}
+.setting-overlay.active{display:block;}
+
+/* 设置 */
+.setting-pop{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.96);width:min(700px,92vw);max-height:86vh;background:rgba(0,0,0,.86);border-radius:20px;padding:clamp(20px,5vw,28px) clamp(20px,5vw,32px);display:flex;flex-direction:column;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .35s var(--ease-out-expo),transform .35s var(--ease-out-expo);overflow:hidden;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 70px rgba(0,0,0,.5);z-index:20;}
+.setting-pop.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
+.setting-pop h2{padding-left:48px;margin-bottom:18px;}
+.set-tab-wrap{display:flex;gap:10px;margin-bottom:22px;flex-wrap:wrap;}
+.set-tab{padding:10px 18px;border-radius:10px;background:#333;cursor:pointer;font-size:14px;transition:background .2s,transform .12s,color .2s;border:1px solid rgba(255,255,255,.05);}
+.set-tab:hover{background:#3f3f3f;}
+.set-tab:active{transform:scale(.96);}
+.set-tab.active{background:linear-gradient(135deg,#255ab8 0%,#1a4590 100%);color:#fff;}
+.set-content{overflow-y:auto;max-height:60vh;}
+.set-row{display:flex;justify-content:space-between;align-items:center;padding:15px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:15px;gap:12px;flex-wrap:wrap;}
+.set-row:last-child{border-bottom:none}
+.nick-input{background:#222;border:none;padding:10px 16px;border-radius:8px;width:min(160px,50%);text-align:right;color:#fff;font-size:15px;outline:none;border:1px solid rgba(255,255,255,.08);transition:background .2s,box-shadow .2s,border-color .2s;}
+.nick-input:focus{background:#2a2a2a;box-shadow:0 0 0 2px rgba(255,255,255,.25);border-color:rgba(255,255,255,.2);}
+.set-row select, .set-row input[type="text"]{background:#222;border:1px solid rgba(255,255,255,.08);padding:8px 12px;border-radius:8px;color:#fff;font-size:14px;outline:none;width:min(200px,60%);}
+.set-row select option{background:#222;}
+
+/* 历史记录 */
+.history-item{display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:14px;gap:10px;flex-wrap:wrap;}
+.history-item:last-child{border-bottom:none}
+.history-item .h-time{color:#888;font-size:12px;margin-left:8px}
+.history-item .h-status{font-size:12px;padding:2px 10px;border-radius:12px;background:rgba(255,255,255,.1);}
+.clear-history-btn{width:100%;margin-top:18px;padding:12px;background:rgba(255,77,77,.15);border:1px solid rgba(255,77,77,.35);border-radius:10px;color:#ff8080;cursor:pointer;transition:background .2s,transform .12s;font-size:14px;}
+.clear-history-btn:hover{background:rgba(255,77,77,.25);}
+.clear-history-btn:active{transform:scale(.98);}
+
+/* 地图元素 */
+.range-circle{pointer-events:none}
+.route-line{stroke:#ff4d4d;stroke-width:4;fill:none;filter:drop-shadow(0 0 6px rgba(255,77,77,.55));stroke-linecap:round;stroke-dasharray:12 6;animation:routeFlow 1.2s linear infinite;}
+.airport-marker-div{transition:transform .25s var(--ease-out-expo);filter:drop-shadow(0 4px 8px rgba(0,0,0,.4));}
+.airport-marker{width:34px;height:34px;background:linear-gradient(145deg,#2a2a35 0%,#1c1c24 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:11px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4),0 0 0 2px rgba(255,255,255,.55);transition:transform .2s,box-shadow .2s,background .2s;border:1px solid rgba(255,255,255,.1);position:relative;}
+.airport-marker::after{content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid rgba(255,255,255,.55);}
+.airport-marker span{position:relative;z-index:1;}
+.airport-marker:hover{transform:translateY(-3px) scale(1.1);box-shadow:0 6px 18px rgba(0,0,0,.45),0 0 0 3px rgba(255,255,255,.7);background:linear-gradient(145deg,#323240 0%,#24242e 100%);}
+.plane-marker-div{}
+.plane-icon{width:48px;height:48px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 4px 10px rgba(0,0,0,.4));transition:transform .6s var(--ease-out-expo);position:relative;}
+.plane-icon svg{width:34px;height:34px;fill:#fff;stroke:#ffffff;stroke-width:1.2;filter:drop-shadow(0 0 8px rgba(255,255,255,.6));}
+.plane-trail{position:absolute;top:50%;left:50%;width:80px;height:2px;background:linear-gradient(90deg,rgba(255,208,0,.6),transparent);transform-origin:left center;transform:translate(-100%,-50%) rotate(180deg);opacity:.7;pointer-events:none;animation:trailPulse 1.5s ease-in-out infinite;}
+.leaflet-control-attribution{display:none!important;}
+.custom-attribution{position:fixed;bottom:calc(8px + var(--safe-bottom));right:calc(8px + var(--safe-right));transform:none;z-index:9;background:rgba(0,0,0,.28);color:#888;font-size:9px;padding:2px 7px;border-radius:8px;backdrop-filter:blur(4px);white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;pointer-events:none;opacity:.85;transition:opacity .25s,bottom .25s;}
+.custom-attribution a{color:#aaa;pointer-events:auto;}
+.custom-attribution.cruise-mode{bottom:calc(118px + var(--safe-bottom));right:calc(14px + var(--safe-right));}
+.custom-attribution.hidden{opacity:0;}
+
+/* 巡航顶部当前机场 & 飞行信息 */
+.cruise-top-info{position:absolute;top:calc(76px + var(--safe-top));left:calc(14px + var(--safe-left));z-index:30;display:flex;flex-direction:column;gap:4px;pointer-events:none;text-shadow:0 0 12px rgba(0,0,0,.9);}
+.cruise-current-airport{font-size:clamp(16px,3.5vw,22px);font-weight:600;background:rgba(0,0,0,.3);padding:4px 14px;border-radius:20px;backdrop-filter:blur(4px);}
+.cruise-fly-info{font-size:clamp(12px,2.5vw,16px);color:#ddd;display:flex;flex-direction:column;gap:2px;background:rgba(0,0,0,.25);padding:4px 14px;border-radius:16px;backdrop-filter:blur(4px);}
+.cruise-fly-info span{display:flex;justify-content:space-between;gap:20px;}
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeInDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeInLeft{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulsePlane{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.08);opacity:1}}
+@keyframes routeFlow{to{stroke-dashoffset:-18}}
+@keyframes trailPulse{0%,100%{opacity:.5;transform:translate(-100%,-50%) rotate(180deg) scaleX(.8)}50%{opacity:.85;transform:translate(-100%,-50%) rotate(180deg) scaleX(1.1)}}
+.anim-fade{animation:fadeIn .4s var(--ease-out-expo) both}
+.anim-slide-up{animation:slideUp .5s var(--ease-out-expo) both}
+
+/* ===== 移动端竖屏适配 ===== */
+@media (max-width:600px) and (orientation:portrait){
+  .top-nav{gap:14px;font-size:14px;max-width:56vw;}
+  .greet-wrapper{top:calc(16px + var(--safe-top));left:calc(10px + var(--safe-left));}
+  .greet-text{font-size:24px;}
+  .airport-info{font-size:14px;}
+  .left-menu{bottom:calc(22px + var(--safe-bottom));gap:7px;}
+  .menu-btn{width:142px;font-size:14px;padding:10px 14px;}
+  .modal-wrap{flex-direction:column;width:100%;height:100%;}
+  .right-time-panel{position:relative;right:auto;top:auto;transform:none;width:min(520px,90%);margin:70px auto 10px;min-width:auto;padding:16px;}
+  .time-slider{height:28px;}
+  .time-slider::-webkit-slider-thumb{width:40px;height:40px;}
+  .time-slider::-moz-range-thumb{width:40px;height:40px;}
+  .time-label{font-size:22px;}
+  #airportListWrap{position:relative;left:auto;top:auto;transform:none;width:min(520px,92%);max-height:calc(100% - 230px - var(--safe-bottom));margin:0 auto;}
+  .bottom-search-box{width:min(520px,92%);bottom:calc(14px + var(--safe-bottom));}
+  .seat-modal{flex-direction:column;justify-content:center;padding-top:calc(48px + var(--safe-top));padding-bottom:calc(12px + var(--safe-bottom));overflow-y:auto;}
+  .plane-body{width:min(340px,92vw);padding:22px 12px 18px;border-radius:70px 70px 16px 16px;margin-bottom:10px;}
+  .seat-head-label{gap:clamp(24px,9vw,42px);margin-bottom:8px;}
+  .seat-scroll-area{max-height:calc(100vh - 210px - var(--safe-top) - var(--safe-bottom));}
+  .seat-box{width:clamp(28px,8.5vw,34px);height:clamp(28px,8.5vw,34px);}
+  .confirm-seat-btn{margin-top:10px;padding:11px 28px;font-size:15px;}
+  .scene-pop{position:fixed;left:50%;right:auto;top:auto;bottom:calc(16px + var(--safe-bottom));transform:translate(-50%,20px) scale(.95);min-width:280px;}
+  .scene-pop.show{transform:translate(-50%,0) scale(1);}
+  .cruise-bottom-left,.cruise-bottom-right{padding:9px 12px;}
+  .cruise-bottom-left div:first-child,.cruise-bottom-right div:first-child{font-size:20px;}
+  .custom-attribution.cruise-mode{bottom:calc(104px + var(--safe-bottom));right:calc(10px + var(--safe-right));}
+  .setting-pop{width:min(520px,96vw);padding:clamp(16px,4vw,22px);}
+  .cruise-top-info{top:calc(68px + var(--safe-top));left:10px;}
+  .cruise-current-airport{font-size:16px;}
+  .cruise-fly-info{font-size:12px;}
+}
+
+/* ===== 移动端横屏适配 ===== */
+@media (max-height:500px) and (orientation:landscape){
+  .top-nav{top:calc(8px + var(--safe-top));right:calc(8px + var(--safe-right));gap:12px;font-size:13px;}
+  .greet-wrapper{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left));}
+  .greet-text{font-size:20px;}
+  .airport-info{font-size:12px;}
+  .left-menu{left:calc(8px + var(--safe-left));bottom:calc(12px + var(--safe-bottom));gap:6px;}
+  .menu-btn{width:120px;padding:8px 12px;font-size:13px;}
+  .right-time-panel{position:relative;right:auto;top:auto;transform:none;width:min(300px,42vw);margin:60px 0 0 60px;min-width:auto;padding:10px;}
+  .time-slider{height:24px;}
+  .time-slider::-webkit-slider-thumb{width:34px;height:34px;}
+  .time-slider::-moz-range-thumb{width:34px;height:34px;}
+  #airportListWrap{position:absolute;left:auto;right:20px;top:55%;transform:translateY(-50%);width:min(320px,46vw);max-height:62vh;}
+  .bottom-search-box{width:min(320px,46vw);left:auto;right:20px;transform:none;bottom:calc(12px + var(--safe-bottom));}
+  .seat-modal{flex-direction:row;gap:16px;padding:0 60px;justify-content:center;}
+  .plane-body{width:min(340px,46vw);padding:24px 16px;max-height:92vh;}
+  .seat-scroll-area{max-height:min(320px,72vh);}
+  .scene-pop{right:12px;left:auto;top:50%;transform:translateY(-50%) scale(.95);}
+  .ticket-modal{gap:18px;}
+  .ticket-card{padding:18px;}
+  .takeoff-modal{gap:16px;}
+  .takeoff-icon{font-size:40px;}
+  .takeoff-text{font-size:16px;}
+  .cruise-top-ctrl{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left));}
+  .cruise-bottom-left,.cruise-bottom-right{bottom:calc(10px + var(--safe-bottom));padding:8px 12px;}
+  .cruise-bottom-left div:first-child,.cruise-bottom-right div:first-child{font-size:18px;}
+  .custom-attribution.cruise-mode{bottom:calc(100px + var(--safe-bottom));right:calc(10px + var(--safe-right));}
+  .setting-pop{padding:18px 20px;max-height:92vh;width:min(600px,90vw);}
+  .cruise-top-info{top:calc(60px + var(--safe-top));left:8px;}
+  .cruise-current-airport{font-size:14px;}
+  .cruise-fly-info{font-size:11px;}
+}
+
+/* 小屏通用 */
+@media (max-width:360px){
+  .top-nav{gap:10px;font-size:13px;}
+  .greet-text{font-size:20px;}
+  .airport-info{font-size:12px;}
+  .menu-btn{width:120px;font-size:13px;padding:9px 12px;}
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- 设置遮罩 -->
+<div class="setting-overlay" id="settingOverlay"></div>
+
+<!-- UI 层 -->
+<div class="ui-layer top-nav" id="homeTopNav">
+  <span id="openTakeoff">起飞</span>
+  <span id="openRecord">记录</span>
+  <span id="openWiki">维基</span>
+  <span id="openSetting">设置</span>
+</div>
+
+<div class="ui-layer greet-wrapper" id="homeGreetWrapper">
+  <div class="greet-text" id="homeGreetText">Airplane·飞行计划</div>
+  <div class="airport-info" id="homeAirportInfo">未选择</div>
+</div>
+
+<div class="ui-layer left-menu" id="homeLeftMenu">
+  <button class="menu-btn" id="btnPrepareFly">准备起飞</button>
+  <button class="menu-btn" id="btnFlyPlan">飞行计划</button>
+  <button class="menu-btn" id="btnRank">排行榜</button>
+  <button class="menu-btn" id="btnArchive">存档</button>
+</div>
+
+<!-- 机场选择模态 -->
+<div class="airport-modal ui-layer" id="airportModal" style="display:none">
+  <button class="back-btn" id="backFromAirport">&lt;</button>
+  <div class="modal-wrap">
+    <div class="right-time-panel">
+      <input type="range" min="10" max="240" step="5" value="60" class="time-slider" id="timeRangeSlider">
+      <div class="time-label" id="timeLabel">60 分钟</div>
+    </div>
+    <div id="airportListWrap"></div>
+    <div class="bottom-search-box">
+      <input placeholder="搜索终点机场（三字码/城市名）" id="airportMainSearch" autocomplete="off">
+    </div>
+  </div>
+</div>
+
+<!-- 搜索终点 -->
+<div class="search-airport-pop ui-layer" id="destSearchPop" style="display:none">
+  <button class="back-btn" id="backDestSearch">&lt;</button>
+  <input class="pop-search-input" placeholder="输入三字码/城市搜索终点机场" id="destSearchInput" autocomplete="off">
+  <div id="destResultWrap"></div>
+</div>
+
+<!-- 选座 -->
+<div class="seat-modal ui-layer" id="seatModal" style="display:none">
+  <button class="back-btn" id="backFromSeat">&lt;</button>
+  <div class="plane-body">
+    <div class="seat-head-label">
+      <span>A</span><span>C</span><span>D</span><span>F</span>
+    </div>
+    <div class="seat-scroll-area" id="seatScrollArea">
+      <div id="allSeatWrap"></div>
+    </div>
+  </div>
+  <button class="confirm-seat-btn" id="confirmSeatBtn">确认选座</button>
+  <div class="scene-pop" id="scenePop">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span>座位 <span id="currSeatNum">--</span></span>
+      <span id="currSceneIcon" style="display:inline-flex;align-items:center;"></span>
+    </div>
+    <div style="margin:8px 0;font-size:14px">想设定哪个专注场景?</div>
+    <div class="scene-grid" id="sceneGridWrap"></div>
+    <button class="add-scene-btn" id="openAddScenePop">+</button>
+  </div>
+</div>
+
+<!-- 添加场景 -->
+<div class="add-scene-pop ui-layer" id="addScenePop" style="display:none">
+  <button class="back-btn" id="backFromAddScene">&lt;</button>
+  <h3 style="text-align:center;margin-bottom:12px">添加专注场景</h3>
+  <div style="margin-bottom:8px;color:#aaa">官方预设（点击选择图标和名称）</div>
+  <div class="icon-row" id="presetSceneRow"></div>
+  <div style="margin-bottom:8px;color:#aaa">自定义名称</div>
+  <input class="input-name" placeholder="输入场景名称" id="customSceneName" autocomplete="off">
+  <div class="dual-btn">
+    <button class="cancel-scene" id="cancelAddScene">取消</button>
+    <button class="confirm-scene" id="saveCustomScene">确认添加</button>
+  </div>
+</div>
+
+<!-- 登机牌 -->
+<div class="ticket-modal ui-layer" id="ticketModal" style="display:none">
+  <button class="back-btn" id="backFromTicket">&lt;</button>
+  <div class="ticket-card">
+    <div class="ticket-top">
+      <div class="ticket-code" id="ticketStartCode">PEK</div>
+      <div class="ticket-code" id="ticketEndCode">DLC</div>
+    </div>
+    <div class="ticket-line"><span>航班 <span id="flightNumberDisplay">CZ8888</span></span><span>登机时间 <span id="realBoardTime">00:00</span></span></div>
+    <div class="ticket-line"><span>乘客 <span id="showNick">请在设置中输入昵称</span></span><span>日期 <span id="realDate">03JUL</span></span></div>
+    <div class="ticket-line"><span></span><span>座位 <span id="ticketSeatShow"></span></span></div>
+    <div class="barcode-box">
+	  <svg width="380" height="60">
+		<rect x="0" y="0" width="380" height="60" fill="#fff"/>
+		<g fill="#000">
+		  <rect x="10" y="8" width="2" height="44"/><rect x="16" y="8" width="1" height="44"/><rect x="22" y="8" width="3" height="44"/><rect x="30" y="8" width="1" height="44"/><rect x="38" y="8" width="4" height="44"/><rect x="46" y="8" width="2" height="44"/><rect x="54" y="8" width="1" height="44"/><rect x="64" y="8" width="3" height="44"/><rect x="72" y="8" width="2" height="44"/><rect x="82" y="8" width="1" height="44"/><rect x="94" y="8" width="4" height="44"/><rect x="104" y="8" width="1" height="44"/><rect x="114" y="8" width="3" height="44"/><rect x="124" y="8" width="2" height="44"/><rect x="136" y="8" width="1" height="44"/><rect x="148" y="8" width="4" height="44"/><rect x="160" y="8" width="2" height="44"/><rect x="172" y="8" width="1" height="44"/><rect x="186" y="8" width="3" height="44"/><rect x="198" y="8" width="2" height="44"/><rect x="210" y="8" width="1" height="44"/><rect x="224" y="8" width="4" height="44"/><rect x="236" y="8" width="1" height="44"/><rect x="248" y="8" width="3" height="44"/><rect x="260" y="8" width="2" height="44"/><rect x="274" y="8" width="1" height="44"/><rect x="288" y="8" width="4" height="44"/><rect x="302" y="8" width="2" height="44"/><rect x="316" y="8" width="1" height="44"/><rect x="330" y="8" width="3" height="44"/><rect x="344" y="8" width="2" height="44"/><rect x="358" y="8" width="1" height="44"/><rect x="370" y="8" width="4" height="44"/>
+		</g>
+	  </svg>
+	</div>
+  </div>
+  <button class="checkin-main-btn" id="goTakeoff">准备登机</button>
+</div>
+
+<!-- 起飞 -->
+<div class="takeoff-modal ui-layer" id="takeoffModal" style="display:none">
+  <div class="takeoff-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M13 2l4 10-4 10"/><path d="M17 12H7.5a2.5 2.5 0 0 0 0 5H17"/></svg>
+  </div>
+  <div class="takeoff-text">舱门关闭，<br>飞行即将开始</div>
+  <button class="start-fly-btn" id="enterCruiseBtn">出发!</button>
+</div>
+
+<!-- 巡航 -->
+<div class="fly-cruise-modal ui-layer" id="cruiseModal" style="display:none">
+  <div class="cruise-top-ctrl">
+    <button class="cruise-ctrl-btn" id="pauseFlyBtn" title="暂停/继续">
+      <svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+    </button>
+    <button class="cruise-ctrl-btn" id="zoomInBtn" title="放大地图">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+    </button>
+    <button class="cruise-ctrl-btn" id="zoomOutBtn" title="缩小地图">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M8 11h6"/></svg>
+    </button>
+    <button class="cruise-ctrl-btn" id="openLayerPanel" title="地图图层">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    </button>
+  </div>
+  <div class="cruise-top-info">
+    <div class="cruise-current-airport" id="cruiseCurrentAirport">PEK → DLC</div>
+    <div class="cruise-fly-info">
+      <span><span>已飞时间</span><span id="cruiseFlyTime">0 min</span></span>
+      <span><span>已飞里程</span><span id="cruiseFlyDist">0 km</span></span>
+    </div>
+  </div>
+  <div class="layer-panel" id="layerPanel">
+    <span id="cruiseCloseHome">✕</span>
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+      <span>地图样式</span>
+      <label><input type="checkbox" id="layerLabelToggle" checked>标签</label>
+    </div>
+    <div class="layer-item active" data-layer="sat">高德卫星</div>
+    <div class="layer-item" data-layer="road">高德路网</div>
+    <div class="layer-item" data-layer="custom">自定义</div>
+  </div>
+  <div class="cruise-bottom-left">
+    <div style="font-size:24px" id="leftKm">0</div>
+    <div style="color:#aaa;font-size:14px">剩余里程 km</div>
+  </div>
+  <div class="cruise-bottom-right">
+    <div style="font-size:24px" id="rightMin">0</div>
+    <div style="color:#aaa;font-size:14px">剩余时间 min</div>
+  </div>
+  <div class="pause-tip" id="pauseTip">
+    <span>⏸ 飞行已暂停</span>
+    <button id="endFlightFromPause">结束飞行</button>
+  </div>
+</div>
+
+<!-- 设置 -->
+<div class="setting-pop ui-layer" id="settingPop" style="display:none">
+  <button class="back-btn" id="closeSettingPop">×</button>
+  <h2 style="margin-bottom:20px;font-size:24px">设置</h2>
+  <div class="set-tab-wrap">
+    <div class="set-tab active" data-tab="account">账号</div>
+    <div class="set-tab" data-tab="flyset">飞行设置</div>
+    <div class="set-tab" data-tab="about">关于</div>
+  </div>
+  <div class="set-content" id="settingContent">
+  </div>
+</div>
+
+<!-- 飞行记录 -->
+<div class="setting-pop ui-layer" id="historyPop" style="display:none">
+  <button class="back-btn" id="closeHistoryPop">×</button>
+  <h2 style="margin-bottom:20px;font-size:24px">飞行记录</h2>
+  <div class="set-content" id="historyListWrap"></div>
+  <button class="clear-history-btn" id="clearHistoryBtn">清空记录</button>
+</div>
+
+<div class="custom-attribution" id="customAttribution"><a href="https://www.autonavi.com/" target="_blank" rel="noopener">© 高德地图</a></div>
+
+<script>
+// ========== 存储封装 ==========
+function setStorage(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) { /* ignore */ }
+}
+function getStorage(key, def) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch(e) { return def; }
+}
+
+// ========== 工具函数 ==========
+function wgs84ToGcj02(lat, lng) {
+    const a = 6378137.0;
+    const ee = 0.006693421622965943;
+    let dLat = transformLat(lng - 105.0, lat - 35.0);
+    let dLng = transformLng(lng - 105.0, lat - 35.0);
+    const radLat = lat / 180.0 * Math.PI;
+    let magic = Math.sin(radLat);
+    magic = 1 - ee * magic * magic;
+    const sqrtMagic = Math.sqrt(magic);
+    dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+    dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+    return [lat + dLat, lng + dLng];
+}
+function transformLat(x, y) {
+    let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+    ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+    ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y / 30.0 * Math.PI)) * 2.0 / 3.0;
+    return ret;
+}
+function transformLng(x, y) {
+    let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+    ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+    ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+    return ret;
+}
+
+function toMapCoord(lat, lng) {
+    if (globalState.currentCoordSystem === 'gcj02') {
+        return wgs84ToGcj02(lat, lng);
+    }
+    return [lat, lng];
+}
+
+function debounce(fn, wait=250){
+    let t;
+    return function(...args){
+        clearTimeout(t);
+        t = setTimeout(()=>fn.apply(this,args),wait);
+    };
+}
+function throttle(fn, limit=120){
+    let inThrottle = false;
+    return function(...args){
+        if(!inThrottle){
+            fn.apply(this,args);
+            inThrottle = true;
+            setTimeout(()=>inThrottle=false, limit);
+        }
+    };
+}
+
+function randomFlightNumber() {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const l1 = letters[Math.floor(Math.random() * 26)];
+  const l2 = letters[Math.floor(Math.random() * 26)];
+  const digits = String(1000 + Math.floor(Math.random() * 9000));
+  return l1 + l2 + digits;
+}
+
+// ========== 机场数据库 ==========
+const iconSvg = {
+    pause: '<svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+    plane: '<svg viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" fill="#fff" stroke="#ffffff" stroke-width="1.2"/></svg>'
+};
+
+const airportDB = [
+{code:"PEK",name:"北京首都",lng:116.403874,lat:40.07993},
+{code:"PKX",name:"北京大兴",lng:116.411323,lat:39.519577},
+{code:"PVG",name:"上海浦东",lng:121.790876,lat:31.14339},
+{code:"SHA",name:"上海虹桥",lng:121.330767,lat:31.190225},
+{code:"CAN",name:"广州白云",lng:113.299034,lat:23.392408},
+{code:"SZX",name:"深圳宝安",lng:113.810332,lat:22.639297},
+{code:"CTU",name:"成都双流",lng:103.954133,lat:30.57848},
+{code:"TFU",name:"成都天府",lng:104.4416,lat:30.3114},
+{code:"CKG",name:"重庆江北",lng:106.6443,lat:29.6263},
+{code:"WUH",name:"武汉天河",lng:114.1217,lat:30.7824},
+{code:"HGH",name:"杭州萧山",lng:120.4331,lat:30.2217},
+{code:"XIY",name:"西安咸阳",lng:108.7516,lat:34.4476},
+{code:"NKG",name:"南京禄口",lng:118.7876,lat:31.7435},
+{code:"TSN",name:"天津滨海",lng:117.348,lat:39.1278},
+{code:"TAO",name:"青岛胶东",lng:120.0913,lat:36.3653},
+{code:"DLC",name:"大连周水子",lng:121.5367,lat:38.9644},
+{code:"CGQ",name:"长春龙嘉",lng:125.6928,lat:43.8499},
+{code:"HRB",name:"哈尔滨太平",lng:126.242,lat:45.6177},
+{code:"SYX",name:"三亚凤凰",lng:109.511,lat:18.342},
+{code:"HAK",name:"海口美兰",lng:110.458,lat:19.932},
+{code:"KMG",name:"昆明长水",lng:102.942,lat:25.103},
+{code:"LHW",name:"兰州中川",lng:103.629,lat:36.475},
+{code:"URC",name:"乌鲁木齐地窝堡",lng:87.477,lat:43.907},
+{code:"HFE",name:"合肥新桥",lng:117.782,lat:31.981},
+{code:"BFU",name:"蚌埠滕湖",lng:117.376,lat:33.053},
+{code:"FUG",name:"阜阳西关",lng:115.741,lat:32.897},
+{code:"XUZ",name:"徐州观音",lng:117.167,lat:34.118},
+{code:"BZJ",name:"亳州机场",lng:115.852,lat:33.876},
+{code:"YIW",name:"义乌",lng:120.034,lat:29.333},
+{code:"FOC",name:"福州长乐",lng:119.623,lat:25.931},
+{code:"XMN",name:"厦门高崎",lng:118.128,lat:24.544},
+{code:"WNZ",name:"温州龙湾",lng:120.646,lat:27.918},
+{code:"CSX",name:"长沙黄花",lng:113.22,lat:28.193},
+{code:"LYA",name:"洛阳北郊",lng:112.367,lat:34.744},
+{code:"CGO",name:"郑州新郑",lng:113.84,lat:34.51},
+{code:"YNT",name:"烟台蓬莱",lng:120.446,lat:37.405},
+{code:"WEH",name:"威海大水泊",lng:122.23,lat:37.18},
+{code:"NNG",name:"南宁吴圩",lng:108.18,lat:22.607},
+{code:"KWE",name:"贵阳龙洞堡",lng:106.81,lat:26.54},
+{code:"LJG",name:"丽江三义",lng:100.24,lat:26.68},
+{code:"DYG",name:"张家界荷花",lng:110.44,lat:29.11},
+{code:"CNI",name:"大连长海",lng:122.607,lat:39.268},
+{code:"HLD",name:"呼伦贝尔海拉尔",lng:119.839,lat:49.213},
+{code:"MDG",name:"牡丹江海浪",lng:129.573,lat:44.523},
+{code:"JMU",name:"佳木斯东郊",lng:130.459,lat:46.841},
+{code:"NDG",name:"齐齐哈尔三家子",lng:124.016,lat:47.226},
+{code:"BAV",name:"包头二里半",lng:109.998,lat:40.559},
+{code:"DSN",name:"鄂尔多斯伊金霍洛",lng:109.863,lat:39.49},
+{code:"CIF",name:"赤峰玉龙",lng:118.835,lat:42.157},
+{code:"DAT",name:"大同云冈",lng:113.593,lat:40.043},
+{code:"YCU",name:"运城张孝",lng:111.039,lat:35.114},
+{code:"HDG",name:"邯郸",lng:114.424,lat:36.527},
+{code:"ZQZ",name:"张家口宁远",lng:114.926,lat:40.736},
+{code:"CZX",name:"常州奔牛",lng:119.732,lat:31.915},
+{code:"WUX",name:"无锡硕放",lng:120.432,lat:31.492},
+{code:"NTG",name:"南通兴东",lng:120.958,lat:32.071},
+{code:"YTY",name:"扬州泰州",lng:119.712,lat:32.562},
+{code:"HSN",name:"舟山普陀",lng:122.367,lat:29.936},
+{code:"YNZ",name:"盐城南洋",lng:120.185,lat:33.423},
+{code:"LYI",name:"临沂启阳",lng:118.417,lat:35.058},
+{code:"YIH",name:"宜昌三峡",lng:111.443,lat:30.695},
+{code:"XFN",name:"襄阳刘集",lng:112.293,lat:32.143},
+{code:"KOW",name:"赣州黄金",lng:114.782,lat:25.856},
+{code:"TXN",name:"黄山屯溪",lng:118.246,lat:29.911},
+{code:"UYN",name:"榆林榆阳",lng:109.746,lat:38.258},
+{code:"JHG",name:"西双版纳嘎洒",lng:100.757,lat:21.979},
+{code:"DLU",name:"大理荒草坝",lng:100.173,lat:25.716},
+{code:"MIG",name:"绵阳南郊",lng:104.736,lat:31.426},
+{code:"ZHA",name:"湛江吴川",lng:110.448,lat:21.228}
+];
+
+// ========== 场景数据 ==========
+const defaultSceneIcon = '<svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="#fff"/></svg>';
+const baseSceneList = [
+{name:"学习",cls:"tag-study",icon:'<svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5V6.5A2.5 2.5 0 0 1 6.5 4H20v13H6.5a2.5 2.5 0 0 0 0 5H20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
+{name:"工作",cls:"tag-work",icon:'<svg viewBox="0 0 24 24"><path d="M10 2h4v2h3v3H7V4h3V2zm-4 7h12v9H6V9zm2 2v5h8v-5H8z" fill="#fff"/></svg>'},
+{name:"睡眠",cls:"tag-sleep",icon:'<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="#fff"/></svg>'},
+{name:"放松",cls:"tag-relax",icon:'<svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" fill="#fff"/></svg>'},
+{name:"运动",cls:"tag-sport",icon:'<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#fff"/></svg>'},
+{name:"阅读",cls:"tag-read",icon:'<svg viewBox="0 0 24 24"><path d="M12 6.5l-7-2v11l7 2 7-2v-11l-7 2z" fill="#fff"/></svg>'},
+{name:"创作",cls:"tag-create",icon:'<svg viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="#fff"/></svg>'},
+{name:"游戏",cls:"tag-game",icon:'<svg viewBox="0 0 24 24"><path d="M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm-9 7H9v3H7v-2H4v-2h3V8h2v3h3v2zm5-1a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" fill="#fff"/></svg>'},
+{name:"音乐",cls:"tag-music",icon:'<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="#fff"/></svg>'},
+{name:"编程",cls:"tag-code",icon:'<svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M10 21l4-18" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
+{name:"追星",cls:"tag-star",icon:defaultSceneIcon}
+];
+const sceneColorMap = {
+  "tag-study": "#207830",
+  "tag-work": "#184477",
+  "tag-sleep": "#522078",
+  "tag-relax": "#186077",
+  "tag-sport": "#774018",
+  "tag-read": "#926000",
+  "tag-create": "#771844",
+  "tag-game": "#441877",
+  "tag-music": "#968012",
+  "tag-code": "#214882",
+  "tag-star": "#812563"
+};
+let userSceneList = [];
+let userNick = "请输入昵称";
+const MAX_SCENE_NUM = 14;
+
+// ========== 全局状态 ==========
+let globalState = {
+    initAirport: airportDB.find(a=>a.code==="PEK"),
+    startAir: null,
+    endAir: null,
+    selectSeat: null,
+    currScene: baseSceneList[0],
+    currSceneColor: sceneColorMap[baseSceneList[0].cls] || "#277c34",
+    flyMin: 60,
+    flyKmPerMin: 13.33,
+    totalKm: 0,
+    remainMin: 0,
+    flyTimer: null,
+    isFlyPause: false,
+    rangeCircle: null,
+    routeLine: null,
+    planeMarker: null,
+    currentTile: null,
+    isFlying: false,
+    map: null,
+    currentCoordSystem: 'gcj02',
+    airportMarkers: [],
+    doneKm: 0,
+    showLabels: true,
+    userInteracting: false,
+    routePane: null,
+    customTileUrl: '',
+    defaultMapStyle: 'sat',
+    hasSetStart: false,
+    startAirCode: null,
+    activeModals: [],
+    planePos: { lat: 0, lng: 0 },
+    flyStartTime: 0,
+    flyElapsedSeconds: 0
+};
+
+// ========== 飞行记录持久化 ==========
+let flyHistory = [];
+const MAX_HISTORY = 100;
+function loadHistory(){
+    flyHistory = getStorage("flyHistory", []);
+}
+function saveHistory(){
+    setStorage("flyHistory", flyHistory);
+}
+function renderHistory(){
+    const wrap = document.getElementById('historyListWrap');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    if(flyHistory.length === 0){
+        wrap.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">暂无飞行记录</div>';
+        return;
+    }
+    flyHistory.slice().reverse().forEach(h=>{
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        const statusText = h.status === 'interrupted' ? '中断' : '已降落';
+        const statusCls = h.status === 'interrupted' ? '#ffaa33' : '#36d058';
+        div.innerHTML = `<span><strong>${h.start}</strong> → <strong>${h.end}</strong> ${h.startName} → ${h.endName}</span>
+                         <span>${h.totalKm}km · ${h.minutes}min <span class="h-status" style="background:${statusCls}22;color:${statusCls}">${statusText}</span><span class="h-time">${h.time}</span></span>`;
+        wrap.appendChild(div);
+    });
+}
+
+// ========== UI 辅助 ==========
+const homeUiList = [];
+function hideAllHomeUI(){
+    homeUiList.forEach(el=>el.classList.add("hide-home-ui"));
+}
+function showAllHomeUI(){
+    homeUiList.forEach(el=>el.classList.remove("hide-home-ui"));
+}
+
+function updateGreetText(){
+    const hour = new Date().getHours();
+    let greet;
+    if(hour >= 6 && hour < 12) greet = "早上好";
+    else if(hour >= 12 && hour < 14) greet = "中午好";
+    else if(hour >= 14 && hour < 18) greet = "下午好";
+    else if(hour >= 18 && hour < 20) greet = "傍晚好";
+    else greet = "晚上好";
+    const el = document.getElementById("homeGreetText");
+    if(el) el.innerText = greet;
+}
+updateGreetText();
+
+function getNowHM(){
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+function getNowDateStr(){
+    const d = new Date();
+    const monthArr = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+    return `${String(d.getDate()).padStart(2,"0")}${monthArr[d.getMonth()]}`;
+}
+
+function updateHomeAirportInfo(){
+    const info = document.getElementById('homeAirportInfo');
+    if(!info) return;
+    if(globalState.startAir) {
+        info.innerText = `当前机场: ${globalState.startAir.name} (${globalState.startAir.code})`;
+    } else {
+        const savedCode = getStorage('startAirCode', null);
+        if(savedCode) {
+            const air = airportDB.find(a=>a.code===savedCode);
+            if(air) {
+                info.innerText = `当前机场: ${air.name} (${air.code})`;
+                return;
+            }
+        }
+        info.innerText = '未选择';
+    }
+}
+
+function setAttributionVisible(visible){
+    const attr = document.getElementById('customAttribution');
+    if(!attr) return;
+    attr.classList.toggle('hidden', !visible);
+}
+function updateAttributionMode(){
+    const attr = document.getElementById('customAttribution');
+    if(!attr) return;
+    const cruiseShown = document.getElementById('cruiseModal') && document.getElementById('cruiseModal').classList.contains('show');
+    if(globalState.isFlying && cruiseShown) attr.classList.add('cruise-mode');
+    else attr.classList.remove('cruise-mode');
+}
+function refreshAttributionVisibility(){
+    const cruiseShown = document.getElementById('cruiseModal') && document.getElementById('cruiseModal').classList.contains('show');
+    const otherModalShown = ['airportModal','seatModal','ticketModal','takeoffModal'].some(mid => {
+        const el = document.getElementById(mid);
+        return el && el.classList.contains('show');
+    });
+    setAttributionVisible(cruiseShown || !otherModalShown);
+    updateAttributionMode();
+}
+
+function closeAllModals(except) {
+    const allModals = ['airportModal','seatModal','ticketModal','takeoffModal','cruiseModal','destSearchPop','addScenePop','settingPop','historyPop'];
+    allModals.forEach(id => {
+        if(id !== except) {
+            const el = document.getElementById(id);
+            if(el && el.classList.contains('show')) {
+                el.classList.remove('show');
+                setTimeout(()=>{ if(!el.classList.contains('show')) el.style.display = 'none'; }, 360);
+            }
+        }
+    });
+    if(except !== 'settingPop') {
+        document.getElementById('settingOverlay').classList.remove('active');
+    }
+}
+
+function showModal(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    closeAllModals(id);
+    el.style.display = el.classList.contains('airport-modal') || el.classList.contains('seat-modal') || el.classList.contains('ticket-modal') || el.classList.contains('takeoff-modal') || el.classList.contains('fly-cruise-modal') ? 'flex' : 'block';
+    void el.offsetWidth;
+    el.classList.add('show');
+    if(id === 'cruiseModal') setAttributionVisible(true);
+    else setAttributionVisible(false);
+    updateAttributionMode();
+    if(id === 'settingPop') {
+        document.getElementById('settingOverlay').classList.add('active');
+    }
+}
+function hideModal(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.classList.remove('show');
+    setTimeout(()=>{
+        if(!el.classList.contains('show')) el.style.display = 'none';
+        refreshAttributionVisibility();
+        if(id === 'settingPop') {
+            document.getElementById('settingOverlay').classList.remove('active');
+        }
+    }, 360);
+}
+
+// ========== Toast ==========
+let toastTimer = null;
+function toast(msg){
+    let t = document.getElementById('toastTip');
+    if(!t){
+        t = document.createElement('div');
+        t.id = 'toastTip';
+        t.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#fff;padding:14px 26px;border-radius:12px;font-size:15px;z-index:100;pointer-events:none;opacity:0;transition:opacity .25s;backdrop-filter:blur(8px);text-align:center;max-width:80vw;';
+        document.body.appendChild(t);
+    }
+    t.innerText = msg;
+    clearTimeout(toastTimer);
+    requestAnimationFrame(()=>t.style.opacity='1');
+    toastTimer = setTimeout(()=>{ t.style.opacity='0'; }, 2000);
+}
+
+// ========== 地图初始化 ==========
+let map;
+let amapSat, amapSatLabel, amapRoad, osmLayer, customLayer;
+
+function initMap() {
+    if (typeof L === 'undefined') {
+        alert('Leaflet 库加载失败，请刷新页面或检查网络！');
+        return;
+    }
+    const tileOptions = {
+        attribution: '© 高德地图',
+        maxZoom: 18,
+        minZoom: 3,
+        tileSize: 256,
+        zoomOffset: 0,
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    };
+    osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19,
+        tileSize: 256,
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    });
+    amapSat = L.tileLayer('https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', tileOptions);
+    amapSatLabel = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scl=1&style=8&x={x}&y={y}&z={z}', {
+        ...tileOptions,
+        subdomains: '1234',
+        opacity: 0.9,
+        zIndex: 2
+    });
+    amapRoad = L.tileLayer('https://webst01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', tileOptions);
+
+    const initPos = toMapCoord(globalState.initAirport.lat, globalState.initAirport.lng);
+    map = L.map('map', { zoomControl: false, attributionControl: false }).setView(initPos, 6);
+    globalState.map = map;
+
+    globalState.routePane = map.createPane('routePane');
+    globalState.routePane.style.zIndex = 450;
+
+    const defaultStyle = getStorage('defaultMapStyle', 'sat');
+    globalState.defaultMapStyle = defaultStyle;
+    switchLayer(defaultStyle);
+
+    setTimeout(() => map.invalidateSize(), 300);
+    renderAllAirportMarker();
+    bindUIEvents();
+    updateHomeAirportInfo();
+}
+
+function switchLayer(type) {
+    if (map.hasLayer(amapSatLabel)) map.removeLayer(amapSatLabel);
+    if (globalState.currentTile) map.removeLayer(globalState.currentTile);
+
+    let newLayer;
+    let newCoord = 'wgs84';
+    let attr = '';
+
+    if (type === 'osm') {
+        newLayer = osmLayer;
+        newCoord = 'wgs84';
+        attr = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>';
+    } else if (type === 'sat') {
+        newLayer = amapSat;
+        if(globalState.showLabels) amapSatLabel.addTo(map);
+        newCoord = 'gcj02';
+        attr = '<a href="https://www.autonavi.com/" target="_blank" rel="noopener">© 高德地图</a>';
+    } else if (type === 'satLabel') {
+        newLayer = amapSat;
+        if(globalState.showLabels) amapSatLabel.addTo(map);
+        newCoord = 'gcj02';
+        attr = '<a href="https://www.autonavi.com/" target="_blank" rel="noopener">© 高德地图</a>';
+    } else if (type === 'road') {
+        newLayer = amapRoad;
+        newCoord = 'gcj02';
+        attr = '<a href="https://www.autonavi.com/" target="_blank" rel="noopener">© 高德地图</a>';
+    } else if (type === 'custom') {
+        const url = getStorage('customTileUrl', '');
+        if(!url) {
+            toast('请先在设置中填写自定义瓦片URL');
+            return;
+        }
+        if(customLayer) map.removeLayer(customLayer);
+        customLayer = L.tileLayer(url, {
+            attribution: '自定义图层',
+            maxZoom: 18,
+            tileSize: 256,
+            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+        });
+        newLayer = customLayer;
+        newCoord = 'wgs84';
+        attr = '自定义图层';
+    } else {
+        newLayer = amapSat;
+        if(globalState.showLabels) amapSatLabel.addTo(map);
+        newCoord = 'gcj02';
+        attr = '<a href="https://www.autonavi.com/" target="_blank" rel="noopener">© 高德地图</a>';
+    }
+
+    globalState.currentTile = newLayer.addTo(map);
+    document.getElementById("customAttribution").innerHTML = attr;
+
+    if (globalState.currentCoordSystem !== newCoord) {
+        globalState.currentCoordSystem = newCoord;
+        rerenderAllGeoElements();
+    }
+}
+
+function updateAirportMarkersPosition() {
+    globalState.airportMarkers.forEach(m => {
+        const air = m._airport;
+        if (!air) return;
+        const [mapLat, mapLng] = toMapCoord(air.lat, air.lng);
+        m.setLatLng([mapLat, mapLng]);
+    });
+}
+
+function rerenderAllGeoElements() {
+    if (globalState.isFlying) {
+        showFlightAirportMarkers();
+    } else {
+        updateAirportMarkersPosition();
+        if (globalState.startAir) updateRangeCircle(globalState.flyMin);
+    }
+    if (globalState.endAir) drawRouteLine();
+    if (globalState.planeMarker) {
+        if (!globalState.isFlying) {
+            const [startLat, startLng] = toMapCoord(globalState.startAir ? globalState.startAir.lat : globalState.initAirport.lat,
+                                                    globalState.startAir ? globalState.startAir.lng : globalState.initAirport.lng);
+            globalState.planeMarker.setLatLng([startLat, startLng]);
+        }
+    }
+}
+
+function drawRouteLine(){
+    if(globalState.routeLine) map.removeLayer(globalState.routeLine);
+    if(!globalState.startAir || !globalState.endAir) return;
+    const [startLat, startLng] = toMapCoord(globalState.startAir.lat, globalState.startAir.lng);
+    const [endLat, endLng] = toMapCoord(globalState.endAir.lat, globalState.endAir.lng);
+    globalState.routeLine = L.polyline([[startLat, startLng],[endLat, endLng]],{
+        className:"route-line",
+        pane:'routePane'
+    }).addTo(map);
+}
+
+function getBearing(lat1, lng1, lat2, lng2){
+    const toRad = Math.PI / 180;
+    const dLng = (lng2 - lng1) * toRad;
+    const y = Math.sin(dLng) * Math.cos(lat2 * toRad);
+    const x = Math.cos(lat1 * toRad) * Math.sin(lat2 * toRad) - Math.sin(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.cos(dLng);
+    let brng = Math.atan2(y, x) * 180 / Math.PI;
+    return (brng + 360) % 360;
+}
+function getRouteBearing(){
+    if(!globalState.startAir || !globalState.endAir) return 0;
+    const [sLat, sLng] = toMapCoord(globalState.startAir.lat, globalState.startAir.lng);
+    const [eLat, eLng] = toMapCoord(globalState.endAir.lat, globalState.endAir.lng);
+    return getBearing(sLat, sLng, eLat, eLng);
+}
+function createPlaneMarker(lat,lng){
+    const bearing = getRouteBearing();
+    const planeIcon = L.divIcon({
+        html: `<div class="plane-icon" style="transform:rotate(${bearing}deg)">${iconSvg.plane}<div class="plane-trail"></div></div>`,
+        iconSize: [48, 48],
+        iconAnchor: [24, 24],
+        className: 'plane-marker-div'
+    });
+    return L.marker([lat, lng],{icon:planeIcon}).addTo(map);
+}
+
+// ========== 机场标记 ==========
+function renderAllAirportMarker(){
+    if (!map) return;
+    globalState.airportMarkers.forEach(m => map.removeLayer(m));
+    globalState.airportMarkers = [];
+
+    airportDB.forEach(air=>{
+        const [mapLat, mapLng] = toMapCoord(air.lat, air.lng);
+        const markerHtml = `<div class="airport-marker"><span>${air.code}</span></div>`;
+        const markerIcon = L.divIcon({
+            html: markerHtml,
+            iconSize: [34, 40],
+            iconAnchor: [17, 39],
+            className: 'airport-marker-div'
+        });
+        const m = L.marker([mapLat, mapLng], {icon: markerIcon}).addTo(map);
+        m._airport = air;
+        m.on("click", ()=>{
+            if (globalState.isFlying) {
+                toast("飞行中无法切换机场");
+                return;
+            }
+            if(!globalState.hasSetStart) {
+                selectStartAirport(air);
+            } else {
+                if(globalState.startAir && globalState.startAir.code === air.code) {
+                    toast("当前已是起飞机场");
+                    return;
+                }
+                toast("起点已固定，如需更改请在设置中重置");
+            }
+        });
+        globalState.airportMarkers.push(m);
+    });
+}
+
+function hideAirportMarkers(){
+    globalState.airportMarkers.forEach(m => { if(map.hasLayer(m)) map.removeLayer(m); });
+}
+function showAirportMarkers(){
+    globalState.airportMarkers.forEach(m => { if(!map.hasLayer(m)) m.addTo(map); });
+}
+function showFlightAirportMarkers(){
+    globalState.airportMarkers.forEach(m => {
+        const air = m._airport;
+        if(!air) return;
+        const isEndpoint = (air.code === (globalState.startAir && globalState.startAir.code)) || (air.code === (globalState.endAir && globalState.endAir.code));
+        const [mapLat, mapLng] = toMapCoord(air.lat, air.lng);
+        m.setLatLng([mapLat, mapLng]);
+        if(isEndpoint){
+            if(!map.hasLayer(m)) m.addTo(map);
+        } else {
+            if(map.hasLayer(m)) map.removeLayer(m);
+        }
+    });
+}
+
+// ========== 核心功能 ==========
+function updateRangeCircle(minute){
+    const km = minute * globalState.flyKmPerMin;
+    const meter = km * 1000;
+    if(globalState.rangeCircle) map.removeLayer(globalState.rangeCircle);
+    if(!globalState.startAir) return;
+    const [mapLat, mapLng] = toMapCoord(globalState.startAir.lat, globalState.startAir.lng);
+    globalState.rangeCircle = L.circle([mapLat, mapLng],{
+        radius:meter,
+        fillColor:"#fff",fillOpacity:0.08,
+        color:"#fff",weight:1,opacity:0.4,
+        className:"range-circle",
+        pane:'routePane'
+    }).addTo(map);
+    map.fitBounds(globalState.rangeCircle.getBounds(),{padding:[40,40], maxZoom:10});
+}
+
+function getDistance(lat1,lng1,lat2,lng2){
+    const R = 6371;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLng = (lng2-lng1)*Math.PI/180;
+    const a = Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return R*(2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+}
+
+function getAirportMinutes(air){
+    if(!globalState.startAir) return 0;
+    const dis = getDistance(globalState.startAir.lat, globalState.startAir.lng, air.lat, air.lng);
+    return Math.max(1, Math.round(dis / globalState.flyKmPerMin));
+}
+
+// ===== 修复1：搜索时忽略时间范围 =====
+function filterAirportByRange(min, keyword=''){
+    const wrap = document.getElementById("airportListWrap");
+    wrap.innerHTML = "";
+    if(!globalState.startAir){
+        wrap.innerHTML = `<div class="airport-empty">请先选择起点机场（点击地图上的机场标记）</div>`;
+        return;
+    }
+    const centerLat = globalState.startAir.lat;
+    const centerLng = globalState.startAir.lng;
+    const key = keyword.trim().toUpperCase();
+
+    let list = airportDB
+        .filter(air=>air.code !== globalState.startAir.code)
+        .map(air=>{
+            const dis = getDistance(centerLat,centerLng,air.lat,air.lng);
+            return {...air, dis, minutes: Math.max(1, Math.round(dis/globalState.flyKmPerMin))};
+        });
+
+    // 如果有搜索关键词，忽略时间范围，只按关键词匹配
+    if(key){
+        list = list.filter(air=>air.code.includes(key) || air.name.includes(key));
+    } else {
+        // 否则按时间范围筛选（±10分钟）
+        const maxKm = (min + 10) * globalState.flyKmPerMin;
+        const minKm = Math.max(0, (min - 10) * globalState.flyKmPerMin);
+        list = list.filter(air => air.dis >= minKm && air.dis <= maxKm);
+    }
+    list.sort((a,b)=>a.dis - b.dis);
+
+    if(list.length === 0){
+        wrap.innerHTML = `<div class="airport-empty">未找到匹配的机场<br><span style="font-size:12px;color:#888">可尝试调整时间或更换起点</span></div>`;
+        return;
+    }
+
+    list.forEach(air=>{
+        const item = document.createElement("div");
+        item.className = "airport-list-item anim-slide-up";
+        item.innerHTML = `<span><span class="airport-tag">${air.code}</span>${air.name}</span><span class="airport-meta">${air.minutes}m · ${Math.round(air.dis)}km</span>`;
+        item.onclick = ()=>openDestSearch(air);
+        wrap.appendChild(item);
+    });
+}
+
+function selectStartAirport(airObj){
+    globalState.startAir = airObj;
+    globalState.hasSetStart = true;
+    globalState.startAirCode = airObj.code;
+    setStorage('startAirCode', airObj.code);
+    setStorage('hasSetStart', true);
+    document.getElementById('airportMainSearch').value = '';
+    updateRangeCircle(globalState.flyMin);
+    filterAirportByRange(globalState.flyMin);
+    showModal('airportModal');
+    updateHomeAirportInfo();
+}
+
+function openDestSearch(targetAir=null){
+    showModal('destSearchPop');
+    const wrap = document.getElementById("destResultWrap");
+    wrap.innerHTML = "";
+    const input = document.getElementById('destSearchInput');
+    input.value = '';
+    if(targetAir){
+        const item = document.createElement("div");
+        item.className = "search-result-item anim-slide-up";
+        item.innerHTML = `<span class="airport-tag">${targetAir.code}</span>${targetAir.name} <span style="color:#aaa;font-size:13px">${getAirportMinutes(targetAir)}m</span>`;
+        item.onclick = ()=>confirmDestAir(targetAir);
+        wrap.appendChild(item);
+    } else {
+        wrap.innerHTML = `<div class="search-hint">输入三字码或城市名搜索终点机场</div>`;
+    }
+    setTimeout(()=>input.focus(), 100);
+}
+
+function confirmDestAir(endAir){
+    if(!globalState.startAir) return;
+    if(globalState.startAir.code === endAir.code){
+        toast("起点和终点不能相同");
+        return;
+    }
+    const totalKm = getDistance(globalState.startAir.lat, globalState.startAir.lng, endAir.lat, endAir.lng);
+    if(totalKm === 0) {
+        toast("起点与终点相同，请重新选择");
+        return;
+    }
+    globalState.endAir = endAir;
+    hideModal('destSearchPop');
+    drawRouteLine();
+    globalState.totalKm = totalKm;
+    globalState.remainMin = Math.max(1, Math.ceil(totalKm / globalState.flyKmPerMin));
+    hideModal('airportModal');
+    showModal('seatModal');
+    renderAllSeat();
+    renderSceneList();
+    document.getElementById("scenePop").classList.remove('show');
+}
+
+function renderAllSeat(){
+    const wrap = document.getElementById("allSeatWrap");
+    wrap.innerHTML = "";
+    for(let i=1;i<=30;i++){
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "seat-row-wrap";
+        const mkSeat = (code)=>{
+            const s = document.createElement("div");
+            s.className = "seat-box";
+            s.dataset.seat = `${i}${code}`;
+            // 预留图标容器
+            const iconSpan = document.createElement("span");
+            iconSpan.className = "seat-icon";
+            iconSpan.style.display = 'none';
+            s.appendChild(iconSpan);
+            s.onclick = ()=>clickSeat(`${i}${code}`);
+            return s;
+        };
+        const seatA = mkSeat('A'), seatC = mkSeat('C'), seatD = mkSeat('D'), seatF = mkSeat('F');
+        const numSpan = document.createElement("span"); numSpan.className = "row-num"; numSpan.innerText = String(i).padStart(2,"0");
+        rowDiv.append(seatA,seatC,numSpan,seatD,seatF);
+        wrap.appendChild(rowDiv);
+    }
+    highlightSelectedSeat();
+}
+
+function highlightSelectedSeat(){
+    document.querySelectorAll(".seat-box").forEach(s=>{
+        s.classList.remove("active");
+        s.style.backgroundColor = "";
+        // 隐藏所有图标
+        const icon = s.querySelector('.seat-icon');
+        if(icon) icon.style.display = 'none';
+    });
+    if(globalState.selectSeat){
+        const sel = document.querySelector(`.seat-box[data-seat="${globalState.selectSeat}"]`);
+        if(sel) {
+            sel.classList.add("active");
+            sel.style.backgroundColor = globalState.currSceneColor;
+            // 显示图标
+            const icon = sel.querySelector('.seat-icon');
+            if(icon && globalState.currScene && globalState.currScene.icon) {
+                icon.innerHTML = globalState.currScene.icon;
+                icon.style.display = 'flex';
+            }
+        }
+        const curr = document.getElementById("currSeatNum");
+        if(curr) curr.innerText = globalState.selectSeat;
+        updateSceneIconDisplay();
+    } else {
+        document.getElementById("currSeatNum").innerText = "--";
+        document.getElementById("currSceneIcon").innerHTML = '';
+    }
+}
+
+function updateSceneIconDisplay(){
+    const iconContainer = document.getElementById('currSceneIcon');
+    if(globalState.currScene && globalState.currScene.icon) {
+        iconContainer.innerHTML = globalState.currScene.icon;
+        iconContainer.style.display = 'inline-flex';
+    } else {
+        iconContainer.innerHTML = '';
+        iconContainer.style.display = 'none';
+    }
+}
+
+function clickSeat(seatId){
+    globalState.selectSeat = seatId;
+    highlightSelectedSeat();
+    document.getElementById("scenePop").classList.add('show');
+}
+
+function updateSelectedSeatColor(){
+    if(globalState.selectSeat){
+        const sel = document.querySelector(`.seat-box[data-seat="${globalState.selectSeat}"]`);
+        if(sel) {
+            sel.style.backgroundColor = globalState.currSceneColor;
+            // 更新图标
+            const icon = sel.querySelector('.seat-icon');
+            if(icon && globalState.currScene && globalState.currScene.icon) {
+                icon.innerHTML = globalState.currScene.icon;
+                icon.style.display = 'flex';
+            }
+        }
+    }
+}
+
+function renderSceneList(){
+    const gridWrap = document.getElementById("sceneGridWrap");
+    gridWrap.innerHTML = "";
+    const baseNames = baseSceneList.map(s=>s.name);
+    userSceneList.forEach((sc, idx)=>{
+        const btn = document.createElement("button");
+        btn.className = `scene-btn ${sc.cls}`;
+        if(!baseNames.includes(sc.name)) btn.classList.add('custom');
+        const iconSpan = document.createElement("span");
+        iconSpan.innerHTML = sc.icon || defaultSceneIcon;
+        iconSpan.style.width = '20px';
+        iconSpan.style.height = '20px';
+        iconSpan.style.display = 'inline-block';
+        iconSpan.style.flexShrink = '0';
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "scene-label";
+        labelSpan.innerText = sc.name;
+        btn.appendChild(iconSpan);
+        btn.appendChild(labelSpan);
+
+        btn.dataset.name = sc.name;
+        btn.onclick = ()=>{
+            globalState.currScene = sc;
+            globalState.currSceneColor = sceneColorMap[sc.cls] || "#277c34";
+            document.querySelectorAll(".scene-btn").forEach(b=>b.classList.remove("selected"));
+            btn.classList.add("selected");
+            document.getElementById("scenePop").classList.remove('show');
+            updateSelectedSeatColor();
+            updateSceneIconDisplay();
+            // 更新座位上的图标
+            highlightSelectedSeat();
+        };
+        if(sc.name === globalState.currScene.name) btn.classList.add("selected");
+        if(!baseNames.includes(sc.name)) {
+            const del = document.createElement("span");
+            del.className = "del-scene";
+            del.innerText = "×";
+            del.onclick = function(e){
+                e.stopPropagation();
+                if(confirm(`删除场景“${sc.name}”？`)) {
+                    userSceneList.splice(idx, 1);
+                    setStorage("sceneSave", userSceneList);
+                    renderSceneList();
+                    if(globalState.currScene.name === sc.name) {
+                        globalState.currScene = userSceneList[0] || baseSceneList[0];
+                        globalState.currSceneColor = sceneColorMap[globalState.currScene.cls] || "#277c34";
+                        updateSceneIconDisplay();
+                        highlightSelectedSeat();
+                    }
+                }
+            };
+            btn.appendChild(del);
+        }
+        gridWrap.appendChild(btn);
+    });
+}
+
+// ===== 球面插值（仍用于计算目标位置） =====
+function slerp(lat1, lng1, lat2, lng2, t) {
+    const toRad = Math.PI / 180;
+    const lat1r = lat1 * toRad, lng1r = lng1 * toRad;
+    const lat2r = lat2 * toRad, lng2r = lng2 * toRad;
+    const dLng = lng2r - lng1r;
+    const cosD = Math.cos(lat1r) * Math.cos(lat2r) * Math.cos(dLng) + Math.sin(lat1r) * Math.sin(lat2r);
+    let d = Math.acos(Math.min(1, Math.max(-1, cosD)));
+    if (d < 1e-8) {
+        return { lat: lat1 + (lat2 - lat1) * t, lng: lng1 + (lng2 - lng1) * t };
+    }
+    const sinD = Math.sin(d);
+    const a = Math.sin((1 - t) * d) / sinD;
+    const b = Math.sin(t * d) / sinD;
+    const x = a * Math.cos(lat1r) * Math.cos(lng1r) + b * Math.cos(lat2r) * Math.cos(lng2r);
+    const y = a * Math.cos(lat1r) * Math.sin(lng1r) + b * Math.cos(lat2r) * Math.sin(lng2r);
+    const z = a * Math.sin(lat1r) + b * Math.sin(lat2r);
+    const latR = Math.atan2(z, Math.sqrt(x*x + y*y));
+    const lngR = Math.atan2(y, x);
+    return { lat: latR / toRad, lng: lngR / toRad };
+}
+
+// ========== 飞行控制 ==========
+function drawPlaneMarker(){
+    if(globalState.planeMarker) map.removeLayer(globalState.planeMarker);
+    if(!globalState.startAir) return;
+    const [startLat, startLng] = toMapCoord(globalState.startAir.lat, globalState.startAir.lng);
+    globalState.planePos = { lat: startLat, lng: startLng };
+    globalState.planeMarker = createPlaneMarker(startLat, startLng);
+}
+
+let flyAnimId = null;
+let lastFlyTime = 0;
+
+function startFlyTimer(){
+    if(flyAnimId) cancelAnimationFrame(flyAnimId);
+    if(globalState.flyTimer) {
+        clearInterval(globalState.flyTimer);
+        globalState.flyTimer = null;
+    }
+
+    if(globalState.remainMin === 0 || globalState.totalKm === 0){
+        toast("起点与终点相同或距离过近，无法飞行");
+        return;
+    }
+
+    globalState.doneKm = 0;
+    globalState.flyStartTime = performance.now();
+    globalState.flyElapsedSeconds = 0;
+    const totalSeconds = globalState.remainMin * 60;
+    const stepKmPerSecond = globalState.totalKm / totalSeconds;
+    const [startLat, startLng] = toMapCoord(globalState.startAir.lat, globalState.startAir.lng);
+    const [endLat, endLng] = toMapCoord(globalState.endAir.lat, globalState.endAir.lng);
+
+    updateCruiseDisplay();
+
+    let prevTime = performance.now();
+
+    function flyStep(timestamp) {
+        if(globalState.isFlyPause) {
+            flyAnimId = requestAnimationFrame(flyStep);
+            return;
+        }
+        const delta = (timestamp - prevTime) / 1000;
+        prevTime = timestamp;
+        if(delta > 0.5) {
+            flyAnimId = requestAnimationFrame(flyStep);
+            return;
+        }
+        globalState.doneKm += stepKmPerSecond * delta;
+        globalState.flyElapsedSeconds += delta;
+        const remainKm = Math.max(0, globalState.totalKm - globalState.doneKm);
+        const currMin = Math.max(0, Math.ceil(remainKm / globalState.flyKmPerMin));
+        document.getElementById("leftKm").innerText = Math.round(remainKm);
+        document.getElementById("rightMin").innerText = currMin;
+
+        const elapsedMin = Math.floor(globalState.flyElapsedSeconds / 60);
+        const elapsedSec = Math.floor(globalState.flyElapsedSeconds % 60);
+        document.getElementById("cruiseFlyTime").innerText = `${elapsedMin}m ${elapsedSec}s`;
+        document.getElementById("cruiseFlyDist").innerText = Math.round(globalState.doneKm) + ' km';
+
+        let ratio = Math.min(1, globalState.doneKm / globalState.totalKm);
+        // 精确计算目标位置（点对点）
+        const target = slerp(startLat, startLng, endLat, endLng, ratio);
+        // 直接设置位置，不做平滑（消除抖动）
+        globalState.planePos.lat = target.lat;
+        globalState.planePos.lng = target.lng;
+
+        if(globalState.planeMarker) {
+            globalState.planeMarker.setLatLng([globalState.planePos.lat, globalState.planePos.lng]);
+            const bearing = getBearing(startLat, startLng, endLat, endLng);
+            const iconEl = globalState.planeMarker._icon;
+            if(iconEl) {
+                const planeIcon = iconEl.querySelector('.plane-icon');
+                if(planeIcon) planeIcon.style.transform = `rotate(${bearing}deg)`;
+            }
+        }
+        if(!globalState.userInteracting){
+            map.setView([globalState.planePos.lat, globalState.planePos.lng], map.getZoom(), {animate: false});
+        }
+        if(globalState.doneKm >= globalState.totalKm){
+            finishFlight();
+            return;
+        }
+        flyAnimId = requestAnimationFrame(flyStep);
+    }
+
+    flyAnimId = requestAnimationFrame(flyStep);
+}
+
+function updateCruiseDisplay(){
+    const remainKm = Math.max(0, globalState.totalKm - globalState.doneKm);
+    const currMin = Math.max(0, Math.ceil(remainKm / globalState.flyKmPerMin));
+    document.getElementById("leftKm").innerText = Math.round(remainKm);
+    document.getElementById("rightMin").innerText = currMin;
+}
+
+function saveFlightRecord(status) {
+    if(!globalState.startAir || !globalState.endAir) return;
+    flyHistory.push({
+        start: globalState.startAir.code,
+        startName: globalState.startAir.name,
+        end: globalState.endAir.code,
+        endName: globalState.endAir.name,
+        totalKm: Math.round(globalState.totalKm),
+        minutes: globalState.remainMin,
+        time: getNowHM(),
+        status: status || 'completed'
+    });
+    if(flyHistory.length > MAX_HISTORY) flyHistory.shift();
+    saveHistory();
+}
+
+function finishFlight(){
+    if(flyAnimId) cancelAnimationFrame(flyAnimId);
+    flyAnimId = null;
+    globalState.isFlying = false;
+    toast("航班顺利降落！");
+    saveFlightRecord('completed');
+    stopAllFlyTask();
+    hideModal('cruiseModal');
+    document.getElementById("layerPanel").classList.remove('show');
+}
+
+function stopAllFlyTask(){
+    if(flyAnimId) {
+        cancelAnimationFrame(flyAnimId);
+        flyAnimId = null;
+    }
+    if(globalState.flyTimer){
+        clearInterval(globalState.flyTimer);
+        globalState.flyTimer = null;
+    }
+    globalState.isFlyPause = false;
+    globalState.isFlying = false;
+    globalState.userInteracting = false;
+    document.getElementById("pauseTip").classList.remove('show');
+    map.getContainer().style.filter = "";
+    document.getElementById("pauseFlyBtn").innerHTML = iconSvg.pause;
+    const attr = document.getElementById('customAttribution');
+    if(attr) attr.classList.remove('cruise-mode');
+
+    if(globalState.routeLine) {
+        map.removeLayer(globalState.routeLine);
+        globalState.routeLine = null;
+    }
+    if(globalState.rangeCircle) {
+        map.removeLayer(globalState.rangeCircle);
+        globalState.rangeCircle = null;
+    }
+    if(globalState.planeMarker) {
+        map.removeLayer(globalState.planeMarker);
+        globalState.planeMarker = null;
+    }
+
+    if(globalState.startAir && globalState.endAir && globalState.doneKm > 0 && globalState.doneKm < globalState.totalKm) {
+        saveFlightRecord('interrupted');
+    }
+
+    globalState.selectSeat = null;
+    globalState.endAir = null;
+    globalState.totalKm = 0;
+    globalState.remainMin = 0;
+    globalState.doneKm = 0;
+    globalState.flyElapsedSeconds = 0;
+
+    showAirportMarkers();
+    showAllHomeUI();
+    document.getElementById('cruiseCurrentAirport').innerText = '';
+    document.getElementById('cruiseFlyTime').innerText = '0 min';
+    document.getElementById('cruiseFlyDist').innerText = '0 km';
+    updateHomeAirportInfo();
+    document.getElementById('currSceneIcon').innerHTML = '';
+}
+
+// ========== 条形码生成（第一版风格） ==========
+function generateBarcodeCanvas(canvasId, text) {
+    const canvas = document.getElementById(canvasId);
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width || 380;
+    const h = canvas.height || 66;
+    canvas.width = w;
+    canvas.height = h;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, w, h);
+
+    const chars = (text || '123456789012').toString();
+    ctx.fillStyle = '#000';
+    let x = 10;
+    for(let i=0; i<chars.length; i++) {
+        const code = chars.charCodeAt(i);
+        const barWidth = 1 + (code % 4) * 1.5;
+        const barHeight = 40 + (code % 20) * 0.8;
+        ctx.fillRect(x, (h - barHeight)/2, barWidth, barHeight);
+        x += barWidth + 2;
+    }
+    // 底部文本
+    ctx.fillStyle = '#000';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(chars, w/2, h-2);
+}
+
+// ========== 设置弹窗内容管理 ==========
+function renderSettingContent(tab) {
+    const content = document.getElementById('settingContent');
+    if (!content) return;
+    if (tab === 'account') {
+        content.innerHTML = `
+            <div class="set-row">
+                <div>我的昵称</div>
+                <input class="nick-input" id="nickEditInput" placeholder="输入昵称" autocomplete="off">
+            </div>
+            <div class="set-row">
+                <div>当前账户</div>
+                <div style="color:#36d058">已激活</div>
+            </div>
+            <div class="set-row">
+                <div>剩余飞行次数</div>
+                <div style="color:#36d058">限免体验</div>
+            </div>
+            <div class="set-row">
+                <div>重置起飞机场</div>
+                <button id="resetStartAirBtn" style="background:#ff4444;border:none;padding:6px 16px;border-radius:8px;color:#fff;cursor:pointer;">重置</button>
+            </div>
+        `;
+        const nickInput = document.getElementById('nickEditInput');
+        if (nickInput) nickInput.value = userNick;
+        document.getElementById('nickEditInput')?.addEventListener('blur', function() {
+            userNick = this.value.trim() || "请在设置中输入昵称";
+            setStorage("userNick", userNick);
+            const show = document.getElementById("showNick");
+            if(show) show.innerText = userNick;
+        });
+        document.getElementById('resetStartAirBtn')?.addEventListener('click', function() {
+            if(confirm('确认重置起飞机场吗？重置后您需要重新选择起点。')) {
+                globalState.hasSetStart = false;
+                globalState.startAirCode = null;
+                globalState.startAir = null;
+                setStorage('hasSetStart', false);
+                setStorage('startAirCode', null);
+                updateHomeAirportInfo();
+                toast('起飞机场已重置');
+            }
+        });
+    } else if (tab === 'flyset') {
+        content.innerHTML = `
+            <div class="set-row">
+                <div>巡航速度</div>
+                <div style="color:#aaa">800 km/h (默认)</div>
+            </div>
+            <div class="set-row">
+                <div>默认地图样式</div>
+                <select id="defaultMapStyleSelect">
+                    <option value="sat">高德卫星</option>
+                    <option value="road">高德路网</option>
+                    <option value="custom">自定义</option>
+                </select>
+            </div>
+            <div class="set-row">
+                <div>自定义瓦片URL</div>
+                <input type="text" id="customTileUrlInput" placeholder="输入瓦片URL模板，如 https://.../{z}/{x}/{y}.png" style="width:70%;">
+            </div>
+        `;
+        const select = document.getElementById('defaultMapStyleSelect');
+        const savedStyle = getStorage('defaultMapStyle', 'sat');
+        select.value = savedStyle;
+        select.onchange = function() {
+            const val = this.value;
+            setStorage('defaultMapStyle', val);
+            globalState.defaultMapStyle = val;
+            if(!globalState.isFlying) {
+                switchLayer(val);
+                document.querySelectorAll('.layer-item').forEach(el => {
+                    el.classList.remove('active');
+                    if(el.dataset.layer === val) el.classList.add('active');
+                });
+            }
+        };
+        const urlInput = document.getElementById('customTileUrlInput');
+        const savedUrl = getStorage('customTileUrl', '');
+        urlInput.value = savedUrl;
+        urlInput.onchange = function() {
+            setStorage('customTileUrl', this.value.trim());
+            globalState.customTileUrl = this.value.trim();
+            toast('自定义瓦片URL已保存');
+        };
+    } else if (tab === 'about') {
+        content.innerHTML = `
+            <div class="set-row">
+                <div>版本</div>
+                <div>V1.2.1.3Beta2</div>
+            </div>
+            <div class="set-row">
+                <div>制作团队</div>
+                <div>©️Wujing·無境</div>
+            </div>
+            <div class="set-row">
+                <div>©️数据源</div>
+                <div>高德地图·自定义瓦片</div>
+            </div>
+            <div class="set-row">
+                <div>当前机场数量</div>
+                <div>69 座</div>
+            </div>
+        `;
+    }
+}
+
+function showSettingWithOverlay(){
+    closeAllModals('settingPop');
+    const lastTab = getStorage('settingTab', 'account');
+    renderSettingContent(lastTab);
+    document.querySelectorAll('.set-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === lastTab);
+    });
+    showModal('settingPop');
+}
+function hideSettingWithOverlay(){
+    hideModal('settingPop');
+}
+
+// ========== 绑定UI事件 ==========
+function bindUIEvents() {
+    // 滑块
+    const slider = document.getElementById("timeRangeSlider");
+    const timeLabel = document.getElementById("timeLabel");
+    slider.oninput = throttle(function(){
+        const val = Number(this.value);
+        timeLabel.innerText = val + ' 分钟';
+        globalState.flyMin = val;
+        updateRangeCircle(val);
+        filterAirportByRange(val, document.getElementById('airportMainSearch').value);
+    }, 120);
+
+    document.getElementById("confirmSeatBtn").onclick = ()=>{
+        if(!globalState.selectSeat) {
+            toast("请先点击选择一个座位");
+            return;
+        }
+        hideModal('seatModal');
+        showModal('ticketModal');
+        document.getElementById("ticketStartCode").innerText = globalState.startAir ? globalState.startAir.code : 'PEK';
+        document.getElementById("ticketEndCode").innerText = globalState.endAir ? globalState.endAir.code : 'DLC';
+        document.getElementById("ticketSeatShow").innerText = globalState.selectSeat;
+        document.getElementById("realBoardTime").innerText = getNowHM();
+        document.getElementById("realDate").innerText = getNowDateStr();
+        document.getElementById("showNick").innerText = userNick;
+        const flightNum = randomFlightNumber();
+        document.getElementById("flightNumberDisplay").innerText = flightNum;
+        setTimeout(()=>generateBarcodeCanvas('barcodeCanvas', flightNum + globalState.selectSeat), 100);
+    };
+
+    document.getElementById("goTakeoff").onclick = ()=>{
+        hideModal('ticketModal');
+        showModal('takeoffModal');
+    };
+
+    document.getElementById("enterCruiseBtn").onclick = ()=>{
+        if(!globalState.startAir || !globalState.endAir || globalState.totalKm === 0){
+            toast("请先完成航线选择");
+            return;
+        }
+        hideModal('takeoffModal');
+        showModal('cruiseModal');
+        hideAllHomeUI();
+        globalState.isFlying = true;
+        showFlightAirportMarkers();
+        updateAttributionMode();
+        if(globalState.rangeCircle){ map.removeLayer(globalState.rangeCircle); globalState.rangeCircle=null; }
+        drawPlaneMarker();
+        document.getElementById('cruiseCurrentAirport').innerText = `${globalState.startAir.code} → ${globalState.endAir.code}`;
+        document.getElementById('cruiseFlyTime').innerText = '0 min';
+        document.getElementById('cruiseFlyDist').innerText = '0 km';
+        startFlyTimer();
+        // 飞行中隐藏部分图层选项
+        document.querySelectorAll('.layer-item').forEach(el => {
+            const layer = el.dataset.layer;
+            if(layer === 'satLabel' || layer === 'osm') {
+                el.style.display = 'none';
+            } else {
+                el.style.display = 'block';
+            }
+        });
+    };
+
+    document.getElementById("pauseFlyBtn").onclick = function(){
+        globalState.isFlyPause = !globalState.isFlyPause;
+        const tipDom = document.getElementById("pauseTip");
+        if(globalState.isFlyPause){
+            this.innerHTML = iconSvg.play;
+            tipDom.classList.add('show');
+            map.getContainer().style.filter = "brightness(0.4)";
+        }else{
+            this.innerHTML = iconSvg.pause;
+            tipDom.classList.remove('show');
+            map.getContainer().style.filter = "";
+        }
+    };
+
+    document.getElementById("zoomInBtn").onclick = ()=> map.zoomIn();
+    document.getElementById("zoomOutBtn").onclick = ()=> map.zoomOut();
+
+    let interactionTimer;
+    function setUserInteracting(){
+        globalState.userInteracting = true;
+        clearTimeout(interactionTimer);
+        interactionTimer = setTimeout(()=>{ globalState.userInteracting = false; }, 3000);
+    }
+    map.on('dragstart zoomstart', setUserInteracting);
+
+    document.getElementById("openLayerPanel").onclick = ()=>{
+        document.getElementById("layerPanel").classList.toggle('show');
+    };
+
+    document.getElementById("cruiseCloseHome").onclick = function(){
+        document.getElementById("layerPanel").classList.remove('show');
+    };
+
+    document.getElementById("layerLabelToggle").onchange = function(){
+        globalState.showLabels = this.checked;
+        const active = document.querySelector('.layer-item.active');
+        if(active) {
+            const layerType = active.dataset.layer;
+            switchLayer(layerType);
+        }
+    };
+
+    document.querySelectorAll(".layer-item").forEach(item => {
+        item.onclick = function(){
+            document.querySelectorAll(".layer-item").forEach(i=>i.classList.remove("active"));
+            this.classList.add("active");
+            const type = this.dataset.layer;
+            if(type === 'custom') {
+                const url = getStorage('customTileUrl', '');
+                if(!url) {
+                    toast('请先在设置中填写自定义瓦片URL');
+                    this.classList.remove('active');
+                    document.querySelector('.layer-item[data-layer="sat"]')?.classList.add('active');
+                    return;
+                }
+            }
+            switchLayer(type);
+        };
+    });
+
+    document.getElementById("endFlightFromPause").onclick = function(){
+        if(globalState.isFlying) {
+            if(!confirm("确定要结束飞行吗？")) return;
+        }
+        stopAllFlyTask();
+        hideModal('cruiseModal');
+        document.getElementById("layerPanel").classList.remove('show');
+        document.querySelectorAll('.layer-item').forEach(el => {
+            el.style.display = 'block';
+        });
+    };
+
+    document.getElementById("backFromAirport").onclick = ()=>{
+        hideModal('airportModal');
+        if(globalState.rangeCircle) {
+            map.removeLayer(globalState.rangeCircle);
+            globalState.rangeCircle = null;
+        }
+        if(globalState.routeLine) {
+            map.removeLayer(globalState.routeLine);
+            globalState.routeLine = null;
+        }
+        globalState.endAir = null;
+    };
+    document.getElementById("backDestSearch").onclick = ()=>{
+        hideModal('destSearchPop');
+    };
+    document.getElementById("backFromSeat").onclick = ()=>{
+        hideModal('seatModal');
+        showModal('airportModal');
+        document.getElementById("scenePop").classList.remove('show');
+    };
+    document.getElementById("backFromTicket").onclick = ()=>{
+        hideModal('ticketModal');
+        showModal('seatModal');
+        document.getElementById("scenePop").classList.remove('show');
+    };
+    document.getElementById("closeSettingPop").onclick = ()=>{
+        hideSettingWithOverlay();
+    };
+    document.getElementById("backFromAddScene").onclick = ()=>{
+        hideModal('addScenePop');
+    };
+
+    function handleTakeoff() {
+        if (globalState.isFlying) { toast("飞行中无法操作"); return; }
+        const hasSet = getStorage('hasSetStart', false);
+        if(!hasSet) {
+            toast('请先点击地图上的机场标记选择起飞机场');
+            return;
+        }
+        const savedCode = getStorage('startAirCode', 'PEK');
+        const startAir = airportDB.find(a=>a.code===savedCode) || globalState.initAirport;
+        globalState.startAir = startAir;
+        globalState.hasSetStart = true;
+        updateRangeCircle(globalState.flyMin);
+        filterAirportByRange(globalState.flyMin);
+        showModal('airportModal');
+        updateHomeAirportInfo();
+    }
+    document.getElementById("btnPrepareFly").onclick = handleTakeoff;
+    document.getElementById("openTakeoff").onclick = handleTakeoff;
+
+    document.getElementById("openSetting").onclick = ()=>{
+        showSettingWithOverlay();
+    };
+
+    document.getElementById("openRecord").onclick = ()=>{
+        renderHistory();
+        showModal('historyPop');
+    };
+    document.getElementById("closeHistoryPop").onclick = ()=>hideModal('historyPop');
+    document.getElementById("clearHistoryBtn").onclick = function(){
+        if(flyHistory.length === 0){ toast("暂无记录可清空"); return; }
+        if(!confirm("确认清空所有飞行记录？")) return;
+        flyHistory = [];
+        saveHistory();
+        renderHistory();
+        toast("已清空");
+    };
+    document.getElementById("openWiki").onclick = ()=>toast("维基功能即将上线，敬请期待！");
+    document.getElementById("btnFlyPlan").onclick = ()=>toast("飞行计划功能开发中");
+    document.getElementById("btnRank").onclick = ()=>toast("排行榜开发中");
+    document.getElementById("btnArchive").onclick = ()=>toast("存档功能开发中");
+
+    document.querySelectorAll(".set-tab").forEach(tab => {
+        tab.onclick = function(){
+            document.querySelectorAll(".set-tab").forEach(t => t.classList.remove("active"));
+            this.classList.add("active");
+            const tabName = this.dataset.tab;
+            setStorage('settingTab', tabName);
+            renderSettingContent(tabName);
+        };
+    });
+
+    // 机场搜索框 - 搜索优先
+    document.getElementById("airportMainSearch").oninput = debounce(function(e){
+        const val = e.target.value;
+        filterAirportByRange(globalState.flyMin, val);
+    }, 200);
+
+    document.getElementById("destSearchInput").oninput = debounce(function(e){
+        const key = e.target.value.toUpperCase();
+        const wrap = document.getElementById("destResultWrap");
+        wrap.innerHTML = "";
+        if(!key){
+            wrap.innerHTML = `<div class="search-hint">输入三字码或城市名搜索终点机场</div>`;
+            return;
+        }
+        let list = airportDB
+            .filter(air=>globalState.startAir ? air.code !== globalState.startAir.code : true)
+            .filter(air=>air.code.includes(key) || air.name.includes(key))
+            .map(air=>({...air, minutes: getAirportMinutes(air)}))
+            .sort((a,b)=>a.minutes - b.minutes);
+
+        if(list.length === 0){
+            wrap.innerHTML = `<div class="airport-empty">未找到匹配的机场</div>`;
+            return;
+        }
+        list.forEach(air=>{
+            const item = document.createElement("div");
+            item.className = "search-result-item anim-slide-up";
+            item.innerHTML = `<span class="airport-tag">${air.code}</span>${air.name} <span style="color:#aaa;font-size:13px">${air.minutes}m</span>`;
+            item.onclick = ()=>confirmDestAir(air);
+            wrap.appendChild(item);
+        });
+    }, 200);
+
+    document.getElementById("nickEditInput")?.addEventListener('blur', function() {
+        userNick = this.value.trim() || "请在设置中输入昵称";
+        setStorage("userNick", userNick);
+        const show = document.getElementById("showNick");
+        if(show) show.innerText = userNick;
+    });
+
+    let selectedIcon = defaultSceneIcon;
+    let selectedName = "";
+    document.getElementById("openAddScenePop").onclick = function(){
+        if(userSceneList.length >= MAX_SCENE_NUM){
+            toast("最多仅可添加14个专注场景");
+            return;
+        }
+        const presetRow = document.getElementById("presetSceneRow");
+        presetRow.innerHTML = "";
+        baseSceneList.forEach(sc => {
+            const span = document.createElement("span");
+            span.className = "icon-sel";
+            span.innerHTML = sc.icon;
+            span.title = sc.name;
+            span.dataset.icon = sc.icon;
+            span.dataset.name = sc.name;
+            span.onclick = function(){
+                document.querySelectorAll(".icon-sel").forEach(el=>el.classList.remove("active-icon"));
+                this.classList.add("active-icon");
+                document.getElementById("customSceneName").value = this.dataset.name;
+                selectedIcon = this.dataset.icon;
+                selectedName = this.dataset.name;
+            };
+            presetRow.appendChild(span);
+        });
+        selectedIcon = defaultSceneIcon;
+        selectedName = "";
+        document.getElementById("customSceneName").value = "";
+        document.querySelectorAll(".icon-sel").forEach(el=>el.classList.remove("active-icon"));
+        showModal('addScenePop');
+    };
+
+    document.getElementById("saveCustomScene").onclick = ()=>{
+        const name = document.getElementById("customSceneName").value.trim() || selectedName;
+        if(!name) {
+            toast("请输入场景名称或选择一个预设图标");
+            return;
+        }
+        if(userSceneList.some(s=>s.name === name)){
+            toast("该场景已存在");
+            return;
+        }
+        const icon = selectedIcon || defaultSceneIcon;
+        const clsList = ["tag-study","tag-work","tag-sleep","tag-relax","tag-sport","tag-read","tag-create","tag-game","tag-music","tag-code","tag-star"];
+        const cls = clsList[Math.floor(Math.random() * clsList.length)];
+        const newSc = {name:name, cls:cls, icon:icon};
+        userSceneList.push(newSc);
+        setStorage("sceneSave", userSceneList);
+        renderSceneList();
+        hideModal('addScenePop');
+        document.getElementById("customSceneName").value = "";
+        document.querySelectorAll(".icon-sel").forEach(el=>el.classList.remove("active-icon"));
+    };
+    document.getElementById("cancelAddScene").onclick = ()=>{
+        hideModal('addScenePop');
+    };
+
+    document.getElementById("settingOverlay").onclick = function(){
+        if(document.getElementById("settingPop").classList.contains('show')){
+            hideSettingWithOverlay();
+        }
+    };
+
+    let resizeTimer;
+    window.addEventListener('resize', ()=>{
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(()=>{
+            if(map) map.invalidateSize();
+        }, 250);
+    });
+}
+
+// ========== 启动 ==========
+window.onload = function(){
+    userSceneList = getStorage("sceneSave", [...baseSceneList]);
+    userNick = getStorage("userNick", "请在设置中输入昵称");
+    loadHistory();
+    globalState.hasSetStart = getStorage('hasSetStart', false);
+    globalState.startAirCode = getStorage('startAirCode', null);
+    if(globalState.startAirCode) {
+        const air = airportDB.find(a=>a.code===globalState.startAirCode);
+        if(air) globalState.startAir = air;
+    }
+
+    const nickInput = document.getElementById("nickEditInput");
+    if(nickInput) nickInput.value = userNick;
+
+    homeUiList.push(
+        document.getElementById("homeTopNav"),
+        document.getElementById("homeGreetWrapper"),
+        document.getElementById("homeLeftMenu")
+    );
+
+    updateGreetText();
+    setInterval(updateGreetText, 60000);
+
+    initMap();
+};
+</script>
+</body>
+</html>
