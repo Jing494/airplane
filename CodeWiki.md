@@ -38,10 +38,10 @@
 | 指标 | 数值 |
 |------|------|
 | 总行数 | ~2125 |
-| CSS 行数 | ~360 |
-| DOM 行数 | ~160 |
-| JS 行数 | ~1600 |
-| 函数数量 | ~55 |
+| CSS 行数 | 353 |
+| DOM 行数 | 186 |
+| JS 行数 | 1542 |
+| 函数数量 | 62 |
 | 全局状态字段 | ~30 |
 | 机场数量 | 69 |
 | 专注场景 | 11 预设 + 自定义 |
@@ -242,7 +242,7 @@ function getStorage(key, def) {
 
 ### 5.2 工具函数层
 
-#### `wgs84ToGcj02(lat, lng)` — 行 557-590
+#### `wgs84ToGcj02(lat, lng)` — 行 557-591
 
 **WGS84 → GCJ02 坐标转换**（国家测绘局标准偏移算法）。
 
@@ -388,18 +388,20 @@ let toastTimer = null;         // Toast 定时器
 
 **图层切换逻辑**：
 
-| type 值 | 瓦片源 | 坐标系 | 标注 |
-|---------|--------|--------|------|
-| `'sat'` | 高德卫星 | GCJ02 | 有 |
-| `'satLabel'` | 高德卫星 | GCJ02 | 有 |
-| `'road'` | 高德路网 | GCJ02 | 无 |
-| `'osm'` | OpenStreetMap | WGS84 | 无 |
-| `'custom'` | 用户自定义 URL | WGS84 | 无 |
+| type 值 | 瓦片源 | 坐标系 | 标注 | 备注 |
+|---------|--------|--------|------|------|
+| `'sat'` | 高德卫星 | GCJ02 | 有 | 默认 |
+| `'satLabel'` | 高德卫星 | GCJ02 | 有 | 与 sat 完全一致，UI 中不可达 |
+| `'road'` | 高德路网 | GCJ02 | 无 | |
+| `'osm'` | OpenStreetMap | WGS84 | 无 | UI 中不可达 |
+| `'custom'` | 用户自定义 URL | WGS84 | 无 | |
 
 **关键行为**：
 - 切换时若坐标系变化 → 调用 `rerenderAllGeoElements()` 批量更新所有覆盖物位置
-- 自定义图层若 URL 为空 → toast 提示并回退到卫星
-- 飞行中隐藏 `satLabel` 和 `osm` 选项
+- 自定义图层若 URL 为空 → toast 提示并直接返回（保持当前图层不变）
+- 飞行中隐藏 `satLabel` 和 `osm` 选项（但图层面板中实际不存在这两项，该代码为死代码）
+- **注意**：`satLabel` 分支与 `sat` 完全一致，且不在 UI 图层面板中，属于不可达代码
+- **注意**：图层面板 HTML 仅定义了 3 项（`sat` / `road` / `custom`），`satLabel` 和 `osm` 并不存在
 
 #### `renderAllAirportMarker()` — 行 1094-1127
 
@@ -437,7 +439,7 @@ let toastTimer = null;         // Toast 定时器
   │
   └─ 无 keyword → 按时间范围筛选（±10分钟）
       maxKm = (min + 10) × 13.33
-      minKm = (min - 10) × 13.33
+      minKm = Math.max(0, (min - 10) × 13.33)
       筛选距离在 [minKm, maxKm] 内的机场
 ```
 
@@ -477,9 +479,9 @@ function getDistance(lat1, lng1, lat2, lng2) {
     const R = 6371;  // 地球半径（km）
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) ** 2
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2)
             + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180)
-            * Math.sin(dLng/2) ** 2;
+            * Math.sin(dLng/2) * Math.sin(dLng/2);
     return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 ```
@@ -580,7 +582,8 @@ let userSceneList = [];
    - totalSeconds = remainMin × 60
    - stepKmPerSecond = totalKm / totalSeconds
 3. 记录起始坐标（GCJ02 转换后）
-4. 启动 requestAnimationFrame 循环
+4. 声明局部变量 prevTime = performance.now()
+5. 启动 requestAnimationFrame 循环
 ```
 
 #### `flyStep(timestamp)` — 行 1481-1531
@@ -977,20 +980,20 @@ interface Scene {
 | `updateSelectedSeatColor` | 1351 | - | void | 更新座位颜色 |
 | `renderSceneList` | 1366 | - | void | 渲染场景列表 |
 | `slerp` | 1424 | lat1,lng1,lat2,lng2, t | {lat,lng} | 球面插值 |
-| `drawPlaneMarker` | 1457 | - | void | 绘制飞机标记 |
+| `drawPlaneMarker` | 1446 | - | void | 绘制飞机标记 |
 | `startFlyTimer` | 1457 | - | void | 启动飞行计时 |
 | `flyStep` | 1481 | timestamp | void | 飞行动画帧 |
 | `updateCruiseDisplay` | 1533 | - | void | 更新巡航显示 |
 | `saveFlightRecord` | 1540 | status | void | 保存飞行记录 |
 | `finishFlight` | 1556 | - | void | 完成飞行 |
 | `stopAllFlyTask` | 1567 | - | void | 停止所有飞行任务 |
-| `generateBarcodeCanvas` | 1619 | canvasId, text | void | 生成条形码 |
+| `generateBarcodeCanvas` | 1619 | canvasId, text | void | 生成条形码（HTML 中无对应 canvas 元素，实际不执行） |
 | `renderSettingContent` | 1649 | tab | void | 渲染设置内容 |
 | `showSettingWithOverlay` | 1754 | - | void | 显示设置弹窗 |
 | `hideSettingWithOverlay` | 1763 | - | void | 隐藏设置弹窗 |
 | `bindUIEvents` | 1768 | - | void | 绑定所有 UI 事件 |
 | `handleTakeoff` | 1935 | - | void | 处理起飞按钮 |
-| `setUserInteracting` | 1849 | - | void | 标记用户交互中 |
+| `setUserInteracting` | 1849 | - | void | 标记用户交互中（嵌套于 bindUIEvents 内部） |
 
 ---
 
@@ -1036,7 +1039,9 @@ window.onload
 | `flyTimer` 已弃用（改用 rAF） | globalState | 移除该字段 |
 | `lastFlyTime` 声明但未使用 | 行 | 移除 |
 | 设置页每次切换 tab 都 innerHTML 重建 | renderSettingContent | 可改为 display 切换 |
-| 登机牌 SVG 条形码是静态硬编码 | ticket-modal | 已有 Canvas 动态生成，SVG 可移除 |
+| 登机牌条形码 | ticket-modal | `generateBarcodeCanvas` 在 HTML 中找不到 `<canvas id="barcodeCanvas">`，函数静默退出；实际显示的是硬编码 SVG 静态条形码 |
+| `switchLayer` 的 `satLabel` 分支 | 行 990 | 与 `sat` 完全一致且不在 UI 图层面板中，属于不可达代码 |
+| 飞行中图层隐藏逻辑 | 行 1823 | 隐藏 `satLabel` 和 `osm` 的代码是死代码（DOM 中不存在这两项） |
 
 ### 11.2 架构层面
 

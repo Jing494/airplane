@@ -4,7 +4,6 @@
 
 ![Version](https://img.shields.io/badge/VERSION-V1.2.1.3Beta2-4A90D9?style=flat-square)
 ![Platform](https://img.shields.io/badge/PLATFORM-WEB%20%2F%20MOBILE-4A90D9?style=flat-square)
-![License](https://img.shields.io/badge/LICENSE-MIT-4A90D9?style=flat-square)
 
 ---
 
@@ -42,7 +41,7 @@
 
 ### 🎫 登机牌
 - 生成模拟登机牌：航班号、日期、座位、乘客昵称
-- 动态条形码 Canvas 渲染
+- 静态 SVG 条形码图形
 
 ### 📊 飞行记录
 - 自动保存每次飞行记录（最多 100 条）
@@ -106,9 +105,9 @@ python3 -m http.server 8080
 
 ```
 index.html
-├── <style>  — 全部 CSS（~360 行）
-├── <body>   — DOM 结构（~160 行）
-└── <script> — 全部 JavaScript（~1600 行）
+├── <style>  — 全部 CSS（353 行）
+├── <body>   — DOM 结构（186 行）
+└── <script> — 全部 JavaScript（1542 行）
 ```
 
 ### 技术栈
@@ -162,7 +161,7 @@ airportDB = [
 | 场景系统 | `renderSceneList` / `updateSelectedSeatColor` | 场景列表与颜色管理 |
 | 飞行控制 | `startFlyTimer` / `flyStep` / `finishFlight` | 飞行动画与计时 |
 | 飞行记录 | `loadHistory` / `saveHistory` / `renderHistory` | 历史持久化 |
-| 登机牌 | `generateBarcodeCanvas` | Canvas 条形码 |
+| 登机牌 | `generateBarcodeCanvas` | 条形码生成（HTML 中无对应 canvas，实际为静态 SVG） |
 | 设置中心 | `renderSettingContent` / `showSettingWithOverlay` | 多标签设置面板 |
 | 事件绑定 | `bindUIEvents` | 全局 UI 事件总线 |
 
@@ -208,34 +207,8 @@ airplane/
 
 ---
 
-## 🗺️ 路线图
-
-- [x] 地图显示与机场标记
-- [x] WGS84 ⇄ GCJ02 坐标切换
-- [x] 时间范围筛选机场
-- [x] 座位选择系统
-- [x] 11 种预设专注场景
-- [x] 自定义场景（最多 14 个）
-- [x] 登机牌与条形码
-- [x] 飞行动画（Slerp 插值）
-- [x] 飞行记录持久化
-- [x] 多图层切换（卫星/路网/自定义）
-- [x] 设置中心
-- [ ] 飞行计划功能（开发中）
-- [ ] 排行榜（开发中）
-- [ ] 存档系统（开发中）
-- [ ] 维基功能（即将上线）
-
----
-
 ## 📝 版本历史
 
 | 版本 | 说明 |
 |------|------|
 | V1.2.1.3Beta2 | 当前版本；修复搜索忽略时间范围、坐标系统联动、Slerp 飞行插值 |
-
----
-
-## 📄 许可
-
-© Wujing · 無境 — MIT License
