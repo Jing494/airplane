@@ -222,9 +222,3 @@ airplane/
 - **字体栈**：`system-ui` / `-apple-system` / `Segoe UI` / `Microsoft YaHei`
 
 ---
-
-## 📝 版本历史
-
-| 版本 | 说明 |
-|------|------|
-| V1.2.1.3Beta2 | 当前版本；修复搜索忽略时间范围、坐标系统联动、Slerp 飞行插值 |
