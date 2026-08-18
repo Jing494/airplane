@@ -59,13 +59,13 @@ index.html
 │   ├── <title> — 版本号含在标题中
 │   ├── Leaflet CSS (CDN)
 │   └── Leaflet JS (CDN)
-├── <style>  ← 全部 CSS（~360 行）
+├── <style>  ← 全部 CSS（353 行）
 ├── <body>
 │   ├── #map ← Leaflet 地图容器
 │   ├── .setting-overlay ← 设置背景遮罩
 │   ├── .ui-layer ← 所有 UI 浮层（首页/模态/弹窗）
 │   ├── .custom-attribution ← 地图版权信息
-│   └── <script> ← 全部 JavaScript（~1600 行）
+│   └── <script> ← 全部 JavaScript（1542 行）
 ```
 
 ---
@@ -802,7 +802,7 @@ b = sin(t·d) / sin(d)     // 终点权重
   └─ 无搜索词 → 距离范围筛选
       速度 = 13.33 km/min
       最大距离 = (时间 + 10) × 速度
-      最小距离 = (时间 - 10) × 速度
+      最小距离 = Math.max(0, (时间 - 10) × 速度)
       筛选 + 按距离排序
 ```
 
